@@ -1,0 +1,251 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f7f4ee;
+  --foreground: #27324a;
+  --card: rgba(255, 253, 250, 0.88);
+  --line: rgba(117, 129, 164, 0.14);
+  --shadow: 0 24px 64px rgba(48, 60, 102, 0.12);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: "Avenir Next", "Segoe UI", "Trebuchet MS", sans-serif;
+  --font-mono: "Trebuchet MS", "Avenir Next", "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background:
+    radial-gradient(circle at 14% 10%, rgba(255, 206, 144, 0.34), transparent 18%),
+    radial-gradient(circle at 84% 12%, rgba(152, 219, 215, 0.24), transparent 20%),
+    radial-gradient(circle at 70% 76%, rgba(255, 190, 203, 0.16), transparent 22%),
+    linear-gradient(180deg, #f8f2e7 0%, #fbf8f2 42%, #f3f7fc 100%);
+}
+
+body {
+  min-height: 100vh;
+  background: transparent;
+  color: var(--foreground);
+  font-family: "Avenir Next", "Segoe UI", "Trebuchet MS", sans-serif;
+}
+
+a,
+button,
+input,
+textarea,
+select {
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    box-shadow 140ms ease,
+    opacity 140ms ease;
+}
+
+::selection {
+  background: rgba(255, 172, 92, 0.42);
+}
+
+.glass-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+
+.app-shell {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.68)),
+    linear-gradient(135deg, rgba(250, 205, 146, 0.11), rgba(138, 207, 201, 0.08));
+  box-shadow:
+    0 18px 42px rgba(57, 39, 112, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+
+.app-shell::before,
+.app-shell::after {
+  content: "";
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(10px);
+  pointer-events: none;
+}
+
+.app-shell::before {
+  top: -90px;
+  right: -40px;
+  width: 220px;
+  height: 220px;
+  background: radial-gradient(circle, rgba(255, 191, 115, 0.54), transparent 68%);
+}
+
+.app-shell::after {
+  bottom: -110px;
+  left: -50px;
+  width: 240px;
+  height: 240px;
+  background: radial-gradient(circle, rgba(99, 208, 199, 0.35), transparent 68%);
+}
+
+.panel-soft {
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  background:
+    radial-gradient(circle at top right, rgba(255, 214, 161, 0.12), transparent 30%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(252, 249, 244, 0.84));
+  box-shadow: 0 10px 24px rgba(78, 63, 132, 0.07);
+}
+
+.panel-strong {
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background:
+    radial-gradient(circle at top left, rgba(255, 220, 170, 0.18), transparent 28%),
+    radial-gradient(circle at 82% 22%, rgba(160, 221, 216, 0.12), transparent 22%),
+    linear-gradient(160deg, #334364 0%, #41567d 52%, #446f73 100%);
+  box-shadow: 0 14px 32px rgba(31, 33, 75, 0.2);
+}
+
+.metric-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.metric-card::after {
+  content: "";
+  position: absolute;
+  inset: auto -10% -58% auto;
+  width: 130px;
+  height: 130px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.field-surface {
+  border: 1px solid rgba(123, 119, 161, 0.16);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+.field-surface:focus {
+  border-color: rgba(64, 176, 169, 0.85);
+  box-shadow:
+    0 0 0 4px rgba(84, 201, 190, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  outline: none;
+}
+
+.hero-mesh {
+  background:
+    radial-gradient(circle at 14% 16%, rgba(250, 214, 161, 0.36), transparent 24%),
+    radial-gradient(circle at 84% 18%, rgba(153, 221, 215, 0.16), transparent 22%),
+    radial-gradient(circle at 72% 80%, rgba(244, 181, 203, 0.12), transparent 18%),
+    linear-gradient(145deg, rgba(54, 67, 95, 0.98), rgba(73, 86, 122, 0.98));
+}
+
+.section-label {
+  letter-spacing: 0.24em;
+}
+
+.toast-card {
+  background: linear-gradient(135deg, #232845, #3f4d84);
+  box-shadow: 0 18px 40px rgba(31, 33, 75, 0.24);
+}
+
+.hero-orb {
+  position: absolute;
+  border-radius: 999px;
+  opacity: 0.58;
+  pointer-events: none;
+}
+
+.hero-orb-one {
+  top: 18px;
+  right: 28px;
+  width: 108px;
+  height: 108px;
+  background: radial-gradient(circle, rgba(255, 215, 156, 0.82), rgba(255, 215, 156, 0.04));
+}
+
+.hero-orb-two {
+  bottom: 24px;
+  right: 128px;
+  width: 72px;
+  height: 72px;
+  background: radial-gradient(circle, rgba(169, 224, 218, 0.78), rgba(169, 224, 218, 0.04));
+}
+
+.hero-orb-three {
+  bottom: -12px;
+  left: 28%;
+  width: 88px;
+  height: 88px;
+  background: radial-gradient(circle, rgba(240, 176, 196, 0.56), rgba(240, 176, 196, 0.03));
+}
+
+.mode-frame {
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  box-shadow:
+    0 12px 28px rgba(43, 58, 95, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.mode-frame::before {
+  content: "";
+  position: absolute;
+  inset: 10px;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+}
+
+.section-head {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.06)),
+    radial-gradient(circle at top left, rgba(255, 226, 194, 0.1), transparent 48%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.child-card {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.08)),
+    radial-gradient(circle at top right, rgba(245, 225, 190, 0.12), transparent 36%);
+  box-shadow: 0 10px 24px rgba(29, 41, 70, 0.1);
+}
+
+.parent-card {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(252, 249, 244, 0.93)),
+    radial-gradient(circle at top right, rgba(244, 224, 190, 0.14), transparent 34%);
+}
+
+.sticker-chip {
+  border-radius: 999px;
+  padding: 0.46rem 0.76rem;
+  font-size: 0.64rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.quiet-chip {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  a,
+  button,
+  input,
+  textarea,
+  select {
+    transition: none;
+  }
+}
