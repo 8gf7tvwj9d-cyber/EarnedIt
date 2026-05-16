@@ -26,10 +26,10 @@ import {
   User,
 } from "@/types/app";
 
-const STORAGE_KEY = "chorepay-demo-store";
+const STORAGE_KEY = "chorepay-family-store";
 const APP_DATA_SCHEMA_VERSION = 1;
 const SHARED_TABLE = "household_app_state";
-const DEFAULT_HOUSEHOLD_ID = "demo-household-1";
+const DEFAULT_HOUSEHOLD_ID = "family-household-1";
 
 type StoredAppDataPayload = {
   schemaVersion: number;
@@ -247,7 +247,7 @@ export function initializeAppData(): AppDataInitialization {
       };
     }
   } catch (error) {
-    console.warn("[Earned] Stored app data parse failed. Falling back to demo data.", error);
+    console.warn("[Earned] Stored app data parse failed. Falling back to starter data.", error);
   }
 
   return {

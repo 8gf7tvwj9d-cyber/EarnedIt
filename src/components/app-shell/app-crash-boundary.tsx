@@ -36,15 +36,15 @@ export class AppCrashBoundary extends React.Component<
                   EarnedIt needs a quick reset
                 </h1>
                 <p className="mt-3 max-w-xl text-sm leading-7 text-slate-700 sm:text-base">
-                  The app hit a loading error while rendering saved local data. Resetting the
-                  demo store will bring it back to a clean working state.
+                  The app hit a loading error while rendering saved local data. Resetting local
+                  data will bring it back to a clean working state.
                 </p>
                 <button
                   className="mt-5 rounded-full bg-[#5f8f43] px-5 py-3 text-sm font-black text-white shadow-[0_12px_24px_rgba(48,35,18,0.16)]"
                   onClick={this.props.onReset}
                   type="button"
                 >
-                  Reset local demo data
+                  Reset local data
                 </button>
               </div>
             </div>

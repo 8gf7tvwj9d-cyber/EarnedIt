@@ -14,10 +14,10 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 Optional:
 
 ```bash
-NEXT_PUBLIC_DEMO_HOUSEHOLD_ID=demo-household-1
+NEXT_PUBLIC_DEMO_HOUSEHOLD_ID=family-household-1
 ```
 
-If `NEXT_PUBLIC_DEMO_HOUSEHOLD_ID` is omitted, the app uses `demo-household-1`.
+If `NEXT_PUBLIC_DEMO_HOUSEHOLD_ID` is omitted, the app uses `family-household-1`.
 
 ## Required Supabase Schema
 
@@ -32,18 +32,18 @@ create table if not exists public.household_app_state (
 
 alter table public.household_app_state enable row level security;
 
-drop policy if exists "anon household read/write demo" on public.household_app_state;
-create policy "anon household read/write demo"
+drop policy if exists "anon household read/write family" on public.household_app_state;
+create policy "anon household read/write family"
 on public.household_app_state
 for all
 to anon
-using (household_id = 'demo-household-1')
-with check (household_id = 'demo-household-1');
+using (household_id = 'family-household-1')
+with check (household_id = 'family-household-1');
 ```
 
 Notes:
 
-- This policy is intentionally minimal for shared demo testing.
+- This policy is intentionally minimal for shared family testing.
 - For production, replace with real auth + per-family access controls.
 
 ## Runtime Behavior

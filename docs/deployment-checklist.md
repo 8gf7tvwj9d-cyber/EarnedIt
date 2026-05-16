@@ -37,7 +37,7 @@ Notes:
   - `NEXT_PUBLIC_SUPABASE_URL`
   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - Optional shared household override:
-  - `NEXT_PUBLIC_DEMO_HOUSEHOLD_ID` (defaults to `demo-household-1`)
+  - `NEXT_PUBLIC_DEMO_HOUSEHOLD_ID` (defaults to `family-household-1`)
 
 ## Storage Limitation (Current)
 

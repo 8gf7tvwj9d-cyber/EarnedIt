@@ -158,7 +158,7 @@ export function ChorePayApp() {
     try {
       fresh = resetAppData();
     } catch (error) {
-      console.warn("[Earned] Fatal reset fell back to bundled demo data.", error);
+      console.warn("[Earned] Fatal reset fell back to bundled starter data.", error);
       fresh = cloneBundledDemoData();
     }
     setToasts([]);
@@ -194,15 +194,15 @@ export function ChorePayApp() {
                 EarnedIt needs a quick reset
               </h1>
               <p className="mt-3 max-w-xl text-sm leading-7 text-slate-700 sm:text-base">
-                Saved local data is out of shape enough to block the first render. Resetting the
-                demo store will restore the app without changing the code path again.
+                Saved local data is out of shape enough to block the first render. Resetting local
+                data will restore the app without changing the code path again.
               </p>
               <button
                 className="mt-5 rounded-full bg-[#5f8f43] px-5 py-3 text-sm font-black text-white shadow-[0_12px_24px_rgba(48,35,18,0.16)]"
                 onClick={handleFatalReset}
                 type="button"
               >
-                Reset local demo data
+                Reset local data
               </button>
             </div>
           </div>
@@ -246,7 +246,7 @@ export function ChorePayApp() {
                 onClick={() => signInAs("parent")}
                 type="button"
               >
-                Parent view
+                Brandon (Parent)
               </button>
               <button
                 className={`rounded-full px-4 py-2.5 text-sm font-black ${
@@ -257,26 +257,14 @@ export function ChorePayApp() {
                 onClick={() => signInAs("child")}
                 type="button"
               >
-                Child view
-              </button>
-              <button
-                className="hero-button-secondary rounded-full px-4 py-2.5 text-sm font-black"
-                onClick={() => {
-                  void enqueueMutation(async () => {
-                    await syncAppData(resetAppData());
-                    pushToast("Demo data reset");
-                  });
-                }}
-                type="button"
-              >
-                Reset demo data
+                Cynthia (Child)
               </button>
             </div>
             {syncWarning ? (
               <p className="relative mt-3 text-sm font-bold text-[#ffe8be]">{syncWarning}</p>
             ) : (
               <p className="relative mt-3 text-sm font-bold text-[#d7efc4]">
-                Shared demo household sync is active.
+                Shared family sync is active.
               </p>
             )}
           </header>
@@ -308,7 +296,7 @@ export function ChorePayApp() {
                       <span className="kicker-icon">
                         <AppIcon className="h-4 w-4" name="seed" />
                       </span>
-                      Parent
+                      Brandon
                     </span>
                     <span className="mt-3 block text-2xl font-black">Plant routines</span>
                     <span className="mt-2 block text-sm leading-6 text-slate-600">
@@ -325,7 +313,7 @@ export function ChorePayApp() {
                       <span className="kicker-icon">
                         <AppIcon className="h-4 w-4" name="sprout" />
                       </span>
-                      Child
+                      Cynthia
                     </span>
                     <span className="mt-3 block text-2xl font-black">Grow rewards</span>
                     <span className="mt-2 block text-sm leading-6 text-slate-700">

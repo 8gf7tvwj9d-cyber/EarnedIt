@@ -14,7 +14,7 @@ export async function loadInitialAppData(): Promise<SharedAppDataInitialization>
   try {
     return await initializeSharedAppData();
   } catch (error) {
-    console.warn("[Earned] Initial app load failed, resetting demo data.", error);
+    console.warn("[Earned] Initial app load failed, resetting local starter data.", error);
     try {
       return {
         appData: resetAppData(),
@@ -23,7 +23,7 @@ export async function loadInitialAppData(): Promise<SharedAppDataInitialization>
         syncWarning: "Shared sync unavailable. Using local-only data on this device.",
       };
     } catch (resetError) {
-      console.warn("[Earned] Demo data reset also failed.", resetError);
+      console.warn("[Earned] Starter data reset also failed.", resetError);
       return {
         appData: cloneBundledDemoData(),
         shouldPersist: true,
