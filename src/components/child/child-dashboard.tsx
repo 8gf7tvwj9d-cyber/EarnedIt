@@ -3,7 +3,6 @@
 
 import { useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { ChoreDebugPanel, ChoreDebugState } from "@/components/chore-debug-panel";
 import { GrowthTreeCard } from "@/components/growth-tree/growth-tree-card";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { StatusBadge } from "@/components/status-badge";
@@ -32,14 +31,9 @@ type ChildDashboardProps = {
   chores: Chore[];
   checkIns: CheckIn[];
   payouts: Payout[];
-  rawStoredCheckInsCount: number;
-  routineDebugByChore: Record<string, ChoreDebugState>;
   onAddRollingProof: (choreId: string, photoUrl: string) => Promise<{
     ok: boolean;
     message: string;
-    persisted: boolean;
-    rawStoredCheckInsCount: number;
-    filteredCheckInsCount: number;
   }>;
   onSubmitChore: (choreId: string, photoUrl: string | null) => void;
   onSubmitRollingChore: (choreId: string) => void;
@@ -51,8 +45,6 @@ export function ChildDashboard({
   chores,
   checkIns,
   payouts,
-  rawStoredCheckInsCount,
-  routineDebugByChore,
   onAddRollingProof,
   onSubmitChore,
   onSubmitRollingChore,
@@ -262,9 +254,9 @@ export function ChildDashboard({
       </section>
 
       <section className="grid gap-3 md:grid-cols-3">
-        <SummaryCard accent="from-[#fff0cb] via-[#ffe0a1] to-[#fff9e8]" icon="seed" label="Seeds planted" value={formatCurrency(pendingApproval)} copy="Submitted and waiting to sprout" />
-        <SummaryCard accent="from-[#e4efd8] via-[#c9dfb4] to-[#fbf8ea]" icon="sprout" label="Ready to harvest" value={formatCurrency(approvedUnpaid)} copy="Approved rewards still unpaid" />
-        <SummaryCard accent="from-[#f4e5bd] via-[#dfc06a] to-[#fff8df]" icon="leaf" label="Harvested" value={formatCurrency(paidTotal)} copy="Rewards that already landed" />
+        <SummaryCard accent="from-[#fff0cb] via-[#ffe0a1] to-[#fff9e8]" icon="seed" label="Pending Review" value={formatCurrency(pendingApproval)} copy="Submitted and awaiting parent review" />
+        <SummaryCard accent="from-[#e4efd8] via-[#c9dfb4] to-[#fbf8ea]" icon="sprout" label="Approved, Unpaid" value={formatCurrency(approvedUnpaid)} copy="Approved rewards not paid yet" />
+        <SummaryCard accent="from-[#f4e5bd] via-[#dfc06a] to-[#fff8df]" icon="leaf" label="Paid Earnings" value={formatCurrency(paidTotal)} copy="Rewards already paid" />
       </section>
 
       <section className="space-y-4">
@@ -276,17 +268,16 @@ export function ChildDashboard({
             </div>
             <h2 className="mt-2 font-mono text-3xl font-black">Keep growing, {currentUser.name}</h2>
             <p className="mt-2 max-w-xl text-sm leading-6 text-slate-200">
-              Water today&apos;s chores, keep streak routines alive, and harvest rewards as they grow.
+              Complete today&apos;s chores, keep streak routines alive, and earn rewards as you go.
             </p>
           </div>
 
           <div className="space-y-5">
-            <ChildSection emptyCopy="Nothing needs watering right now." icon="leaf" title="Ready to water">
+            <ChildSection emptyCopy="No available chores right now." icon="leaf" title="Available Chores">
               {availableChores.map((chore) => (
                 <ChildChoreCard
                   key={chore.id}
                   chore={chore}
-                  debugState={routineDebugByChore[chore.id] ?? null}
                   message={messages[chore.id] ?? null}
                   onOpenCamera={openCamera}
                   onPhotoSelect={handlePhotoSelect}
@@ -299,28 +290,25 @@ export function ChildDashboard({
                   checkIns={checkIns}
                   onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })}
                   onRoutineProof={handleRoutineProof}
-                  rawStoredCheckInsCount={rawStoredCheckInsCount}
                   isRoutineSaving={routineSaving[chore.id] ?? false}
                 />
               ))}
             </ChildSection>
 
-            <ChildSection emptyCopy="No planted chores are waiting on approval." icon="clock" title="Seeds planted">
+            <ChildSection emptyCopy="No chores are pending review." icon="clock" title="Pending Review">
               {awaitingApproval.map((chore) => (
-                <ReadOnlyChoreCard key={chore.id} checkIns={checkIns} chore={chore} debugState={routineDebugByChore[chore.id] ?? null} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} rawStoredCheckInsCount={rawStoredCheckInsCount} subtitle="Waiting on parent review" />
+                <ReadOnlyChoreCard key={chore.id} checkIns={checkIns} chore={chore} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} subtitle="Waiting on parent review" />
               ))}
             </ChildSection>
 
-            <ChildSection emptyCopy="Nothing is ready to harvest yet." icon="sprout" title="Ready to harvest">
+            <ChildSection emptyCopy="No approved or paid chores yet." icon="sprout" title="Approved / Paid">
               {approvedEarned.map((chore) => (
                 <ReadOnlyChoreCard
                   key={chore.id}
                   checkIns={checkIns}
                   chore={chore}
-                  debugState={routineDebugByChore[chore.id] ?? null}
                   onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })}
-                  rawStoredCheckInsCount={rawStoredCheckInsCount}
-                  subtitle={getComputedStatus(chore, checkIns) === "paid" ? "Already harvested" : "Approved and ready to harvest"}
+                  subtitle={getComputedStatus(chore, checkIns) === "paid" ? "Paid" : "Approved and awaiting payment"}
                 />
               ))}
             </ChildSection>
@@ -329,15 +317,15 @@ export function ChildDashboard({
 
         <div className="space-y-4">
           <div className="section-shell rounded-[30px] p-5 sm:p-6">
-            <div className="kicker-row text-slate-500"><span className="kicker-icon"><AppIcon className="h-4 w-4" name="seed" /></span>Harvest history</div>
-            <h3 className="mt-2 font-mono text-2xl font-black text-slate-900">Rewards already harvested by {childProfile.name}</h3>
+            <div className="kicker-row text-slate-500"><span className="kicker-icon"><AppIcon className="h-4 w-4" name="seed" /></span>Payment history</div>
+            <h3 className="mt-2 font-mono text-2xl font-black text-slate-900">Paid rewards for {childProfile.name}</h3>
           </div>
 
           <div className="section-shell rounded-[30px] p-5 sm:p-6">
             <div className="mb-4 flex items-center justify-between gap-3">
-              <div className="kicker-row text-slate-500"><span className="kicker-icon"><AppIcon className="h-4 w-4" name="seed" /></span>Harvests</div>
+              <div className="kicker-row text-slate-500"><span className="kicker-icon"><AppIcon className="h-4 w-4" name="seed" /></span>Payments</div>
               <div className="flex items-center gap-2">
-                <span className="stat-chip stat-chip-soft">{payouts.length} harvests</span>
+                <span className="stat-chip stat-chip-soft">{payouts.length} payments</span>
                 <button className="hero-button-secondary rounded-full px-3 py-2 text-xs font-black" onClick={() => setIsPaidHistoryOpen((current) => !current)} type="button">
                   {isPaidHistoryOpen ? "Hide" : "Show"}
                 </button>
@@ -353,13 +341,13 @@ export function ChildDashboard({
             </div>
             <div className="space-y-3">
               {sortedPayouts.length === 0 ? (
-                <EmptyState copy="No harvests yet. Once a parent marks a reward as paid, it will show up here." />
+                <EmptyState copy="No payments yet. Once a parent records a payment, it will show up here." />
               ) : (
                 sortedPayouts.map((payout) => (
                   <article key={payout.id} className="card-spotlight rounded-[24px] border border-[#d9c075]/45 bg-gradient-to-br from-[#fff8e6] to-white p-4 shadow-[0_16px_30px_rgba(48,35,18,0.08)]">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="support-label">Reward harvested</p>
+                        <p className="support-label">Reward paid</p>
                         <p className="mt-2 text-3xl font-black tracking-[-0.04em] text-slate-900">{formatCurrency(payout.amount_cents)}</p>
                         <p className="text-sm text-slate-600">{payout.paid_method}</p>
                       </div>
@@ -373,7 +361,7 @@ export function ChildDashboard({
             </div>
             </>
             ) : (
-              <EmptyState copy="Harvest history is tucked away until you want to look back through it." />
+              <EmptyState copy="Payment history is tucked away until you want to review it." />
             )}
           </div>
         </div>
@@ -391,7 +379,6 @@ function ChildChoreCard({
   message,
   chores,
   checkIns,
-  debugState,
   isPhotoPreparing,
   isRoutineSaving,
   onRegisterFileInput,
@@ -401,14 +388,12 @@ function ChildChoreCard({
   onRoutineProof,
   onRoutineSubmit,
   onStandardSubmit,
-  rawStoredCheckInsCount,
 }: {
   chore: Chore;
   photoDraft: string | null;
   message: string | null;
   chores: Chore[];
   checkIns: CheckIn[];
-  debugState: ChoreDebugState;
   isPhotoPreparing: boolean;
   isRoutineSaving: boolean;
   onRegisterFileInput: (choreId: string, node: HTMLInputElement | null) => void;
@@ -418,7 +403,6 @@ function ChildChoreCard({
   onRoutineProof: (chore: Chore) => void;
   onRoutineSubmit: (chore: Chore) => void;
   onStandardSubmit: (chore: Chore) => void;
-  rawStoredCheckInsCount: number;
 }) {
   const status = getComputedStatus(chore, checkIns);
   const proofEntries = getProofEntries(chore, checkIns);
@@ -542,18 +526,10 @@ function ChildChoreCard({
           </>
         ) : (
           <button className={`action-button w-full rounded-2xl px-4 py-4 text-base font-black ${photoDraft && !isPhotoPreparing ? "bg-gradient-to-r from-[#6f9a52] to-[#d4ad4f] text-slate-950" : "hero-button-secondary text-slate-200"}`} disabled={!photoDraft || isPhotoPreparing} onClick={() => onStandardSubmit(chore)} type="button">
-            {isOptionalChore(chore) ? "Submit extra earning chore" : "Submit chore"}
+            {isOptionalChore(chore) ? "Submit optional chore" : "Submit chore"}
           </button>
         )}
       </div>
-
-      <ChoreDebugPanel
-        checkIns={checkIns}
-        chore={chore}
-        lastSaveState={debugState}
-        rawStoredCheckInsCount={rawStoredCheckInsCount}
-        visibleFilteredCheckInsCount={checkIns.length}
-      />
 
       {message ? <p className="mt-3 rounded-2xl bg-white/12 px-3 py-2 text-sm font-bold text-white">{message}</p> : null}
     </article>
@@ -563,16 +539,12 @@ function ChildChoreCard({
 function ReadOnlyChoreCard({
   checkIns,
   chore,
-  debugState,
   onOpenLightbox,
-  rawStoredCheckInsCount,
   subtitle,
 }: {
   checkIns: CheckIn[];
   chore: Chore;
-  debugState: ChoreDebugState;
   onOpenLightbox: (src: string, alt: string) => void;
-  rawStoredCheckInsCount: number;
   subtitle: string;
 }) {
   const status = getComputedStatus(chore, checkIns);
@@ -634,13 +606,6 @@ function ReadOnlyChoreCard({
           <img alt={`${chore.title} proof`} className="h-44 w-full rounded-[22px] object-cover ring-2 ring-white/16" src={latestProofImage} />
         </button>
       ) : null}
-      <ChoreDebugPanel
-        checkIns={checkIns}
-        chore={chore}
-        lastSaveState={debugState}
-        rawStoredCheckInsCount={rawStoredCheckInsCount}
-        visibleFilteredCheckInsCount={checkIns.length}
-      />
     </article>
   );
 }

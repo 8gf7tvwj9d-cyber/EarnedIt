@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AppCrashBoundary } from "@/components/app-shell/app-crash-boundary";
 import { cloneBundledDemoData, loadInitialAppData } from "@/components/app-shell/app-data-loader";
-import { ChoreDebugState } from "@/components/chore-debug-panel";
 import { ChildDashboard } from "@/components/child/child-dashboard";
 import { ParentDashboard } from "@/components/parent/parent-dashboard";
 import { AppIcon } from "@/components/ui-icons";
@@ -34,9 +33,6 @@ type Toast = {
 type RoutineSaveResult = {
   ok: boolean;
   message: string;
-  persisted: boolean;
-  rawStoredCheckInsCount: number;
-  filteredCheckInsCount: number;
   appData: AppData;
 };
 
@@ -45,9 +41,9 @@ export function ChorePayApp() {
   const [hasLoadedStoredData, setHasLoadedStoredData] = useState(false);
   const [storageMode, setStorageMode] = useState<"local" | "supabase">("local");
   const [syncWarning, setSyncWarning] = useState<string | null>(null);
-  const [routineDebugByChore, setRoutineDebugByChore] = useState<Record<string, ChoreDebugState>>({});
   const [toasts, setToasts] = useState<Toast[]>([]);
   const latestAppDataRef = useRef(appData);
+  const mutationQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
     latestAppDataRef.current = appData;
@@ -108,6 +104,7 @@ export function ChorePayApp() {
   }
 
   function updateAppData(nextData: AppData) {
+    latestAppDataRef.current = nextData;
     setAppData(nextData);
     writeAppData(nextData);
   }
@@ -120,6 +117,7 @@ export function ChorePayApp() {
       persisted: ok,
       mode,
     });
+    latestAppDataRef.current = refreshed;
     setAppData(refreshed);
     setStorageMode(mode);
     setSyncWarning(
@@ -128,6 +126,17 @@ export function ChorePayApp() {
         : "Shared sync unavailable. Using local-only data on this device.",
     );
     return { refreshed, ok, mode };
+  }
+
+  function enqueueMutation(task: (snapshot: AppData) => Promise<void> | void) {
+    mutationQueueRef.current = mutationQueueRef.current
+      .then(async () => {
+        await task(latestAppDataRef.current);
+      })
+      .catch((error) => {
+        console.warn("[Earned] Queued mutation failed.", error);
+      });
+    return mutationQueueRef.current;
   }
 
   function signInAs(role: "parent" | "child") {
@@ -152,7 +161,6 @@ export function ChorePayApp() {
       console.warn("[Earned] Fatal reset fell back to bundled demo data.", error);
       fresh = cloneBundledDemoData();
     }
-    setRoutineDebugByChore({});
     setToasts([]);
     setAppData(fresh);
     if (typeof window !== "undefined") {
@@ -254,8 +262,10 @@ export function ChorePayApp() {
               <button
                 className="hero-button-secondary rounded-full px-4 py-2.5 text-sm font-black"
                 onClick={() => {
-                  void syncAppData(resetAppData());
-                  pushToast("Demo data reset");
+                  void enqueueMutation(async () => {
+                    await syncAppData(resetAppData());
+                    pushToast("Demo data reset");
+                  });
                 }}
                 type="button"
               >
@@ -284,8 +294,8 @@ export function ChorePayApp() {
                   Tend the habit garden from both sides.
                 </h2>
                 <p className="mt-3 max-w-xl text-sm leading-7 text-slate-200 sm:text-base">
-                  Parent mode plants the routine and approves the harvest. Child mode keeps
-                  each habit watered with proof and steady progress.
+                  Parent mode sets routines, reviews submissions, and records payments. Child
+                  mode keeps each habit moving with proof and steady progress.
                 </p>
 
                 <div className="mt-6 grid gap-3 sm:grid-cols-2">
@@ -350,9 +360,9 @@ export function ChorePayApp() {
                   />
                   <FeatureCard
                     accent="from-[#f2e7c5] via-[#f9f1dd] to-[#fffaf0]"
-                    copy="Earned tracks the harvest without pretending to replace how families actually pay each other."
+                    copy="Earned tracks payments without pretending to replace how families actually pay each other."
                     icon="seed"
-                    title="Harvest stays simple"
+                    title="Payments stay simple"
                   />
                 </div>
               </div>
@@ -366,33 +376,41 @@ export function ChorePayApp() {
               chores={appData.chores.filter((chore) => chore.parent_id === currentUser.id)}
               currentUser={currentUser}
               payouts={appData.payouts.filter((payout) => payout.parent_id === currentUser.id)}
-              rawStoredCheckInsCount={appData.checkIns.length}
-              routineDebugByChore={routineDebugByChore}
               onApprove={(choreId) => {
-                void syncAppData(approveChore(appData, choreId));
-                pushToast("Chore approved");
+                void enqueueMutation(async (snapshot) => {
+                  await syncAppData(approveChore(snapshot, choreId));
+                  pushToast("Chore approved");
+                });
               }}
               onDeleteChore={(choreId) => {
-                void syncAppData(deleteChore(appData, choreId));
-                pushToast("Chore deleted");
+                void enqueueMutation(async (snapshot) => {
+                  await syncAppData(deleteChore(snapshot, choreId));
+                  pushToast("Chore deleted");
+                });
               }}
               onMarkPaid={(childId, notes) => {
-                const before = appData.payouts.length;
-                const next = markBalancePaid(appData, currentUser.id, childId, notes);
-                void syncAppData(next);
-                pushToast(
-                  next.payouts.length > before
-                    ? "Harvest marked as paid"
-                    : "No approved harvest ready yet",
-                );
+                void enqueueMutation(async (snapshot) => {
+                  const before = snapshot.payouts.length;
+                  const next = markBalancePaid(snapshot, currentUser.id, childId, notes);
+                  await syncAppData(next);
+                  pushToast(
+                    next.payouts.length > before
+                      ? "Payment recorded"
+                      : "No approved rewards ready for payment",
+                  );
+                });
               }}
               onReject={(choreId, note) => {
-                void syncAppData(rejectChore(appData, choreId, note));
-                pushToast("Chore rejected");
+                void enqueueMutation(async (snapshot) => {
+                  await syncAppData(rejectChore(snapshot, choreId, note));
+                  pushToast("Chore rejected");
+                });
               }}
               onSaveChore={(draft: ChoreDraft) => {
-                void syncAppData(saveChore(appData, currentUser, draft));
-                pushToast(draft.id ? "Chore updated" : "Chore created");
+                void enqueueMutation(async (snapshot) => {
+                  await syncAppData(saveChore(snapshot, currentUser, draft));
+                  pushToast(draft.id ? "Chore updated" : "Chore created");
+                });
               }}
             />
           ) : childProfile ? (
@@ -402,38 +420,32 @@ export function ChorePayApp() {
               chores={childChores}
               currentUser={currentUser}
               payouts={childPayouts}
-              rawStoredCheckInsCount={appData.checkIns.length}
-              routineDebugByChore={routineDebugByChore}
               onAddRollingProof={async (choreId, photoUrl): Promise<RoutineSaveResult> => {
-                const result = saveRoutineCheckIn(appData, choreId, photoUrl) as RoutineSaveResult;
-                let persisted = result.persisted;
-
-                if (result.ok) {
-                  const syncResult = await syncAppData(result.appData);
-                  persisted = syncResult.ok;
-                }
-
-                setRoutineDebugByChore((current) => ({
-                  ...current,
-                  [choreId]: {
-                    filteredCheckInsCount: result.filteredCheckInsCount,
-                    message: result.message,
-                    persisted,
-                    rawStoredCheckInsCount: result.rawStoredCheckInsCount,
-                  },
-                }));
-                if (result.ok) {
-                  pushToast(result.message);
-                }
+                let result: RoutineSaveResult = {
+                  ok: false,
+                  message: "Could not save check-in.",
+                  appData: latestAppDataRef.current,
+                };
+                await enqueueMutation(async (snapshot) => {
+                  result = saveRoutineCheckIn(snapshot, choreId, photoUrl) as RoutineSaveResult;
+                  if (result.ok) {
+                    await syncAppData(result.appData);
+                    pushToast(result.message);
+                  }
+                });
                 return result;
               }}
               onSubmitChore={(choreId, photoUrl) => {
-                void syncAppData(submitChore(appData, choreId, photoUrl));
-                pushToast("Chore submitted for review");
+                void enqueueMutation(async (snapshot) => {
+                  await syncAppData(submitChore(snapshot, choreId, photoUrl));
+                  pushToast("Chore submitted for review");
+                });
               }}
               onSubmitRollingChore={(choreId) => {
-                void syncAppData(submitRollingChore(appData, choreId));
-                pushToast("Routine chore submitted for review");
+                void enqueueMutation(async (snapshot) => {
+                  await syncAppData(submitRollingChore(snapshot, choreId));
+                  pushToast("Routine chore submitted for review");
+                });
               }}
             />
           ) : (

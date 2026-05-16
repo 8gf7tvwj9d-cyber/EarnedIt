@@ -1,7 +1,6 @@
 /* eslint-disable @next/next/no-img-element */
 
 import type { ReactNode } from "react";
-import { ChoreDebugState, ChoreDebugPanel } from "@/components/chore-debug-panel";
 import { EmptyState } from "@/components/parent/parent-ui";
 import { StatusBadge } from "@/components/status-badge";
 import { AppIcon, getChoreIcon } from "@/components/ui-icons";
@@ -31,8 +30,6 @@ export function ChoreGroup({
   onDeleteChore,
   onOpenChange,
   onOpenLightbox,
-  rawStoredCheckInsCount,
-  routineDebugByChore,
   sortControl,
 }: {
   title: string;
@@ -46,8 +43,6 @@ export function ChoreGroup({
   onDeleteChore: (choreId: string) => void;
   onOpenChange?: (next: boolean) => void;
   onOpenLightbox: (src: string, alt: string) => void;
-  rawStoredCheckInsCount: number;
-  routineDebugByChore: Record<string, ChoreDebugState>;
   sortControl?: ReactNode;
 }) {
   return (
@@ -129,20 +124,13 @@ export function ChoreGroup({
                 <p>{formatCurrency(chore.amount_cents)}</p>
                 <p>{formatRepeatSchedule(chore)}</p>
                 <p>Assigned to {childProfiles.find((child) => child.id === chore.child_id)?.name ?? "Unknown"}</p>
-                <p>{isRoutineChore(chore) ? `${streakStatus?.progressCount} of ${streakStatus?.requiredCount} check-ins complete` : isOptionalChore(chore) ? optionalState?.resetLabel : "One-time harvest when approved"}</p>
+                <p>{isRoutineChore(chore) ? `${streakStatus?.progressCount} of ${streakStatus?.requiredCount} check-ins complete` : isOptionalChore(chore) ? optionalState?.resetLabel : "One-time reward after approval"}</p>
               </div>
               {latestProofImage ? (
                 <button className="mt-3 block w-full" onClick={() => onOpenLightbox(latestProofImage, `${chore.title} proof`)} type="button">
                   <img alt={`${chore.title} proof`} className="h-40 w-full rounded-[22px] object-cover ring-1 ring-white/12" src={latestProofImage} />
                 </button>
               ) : null}
-              <ChoreDebugPanel
-                checkIns={checkIns}
-                chore={chore}
-                lastSaveState={routineDebugByChore[chore.id] ?? null}
-                rawStoredCheckInsCount={rawStoredCheckInsCount}
-                visibleFilteredCheckInsCount={checkIns.length}
-              />
               {chore.rejection_note ? <p className="mt-3 rounded-2xl bg-rose-50/90 px-3 py-2 text-sm text-rose-800">{chore.rejection_note}</p> : null}
               <div className="mt-4 flex gap-2">
                 <button className="action-button flex-1 rounded-2xl border border-white/18 bg-white/10 px-4 py-3 font-black text-white" onClick={() => onEdit(chore)} type="button">Edit</button>

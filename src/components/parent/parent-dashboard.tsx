@@ -1,5 +1,4 @@
 "use client";
-/* eslint-disable @next/next/no-img-element */
 
 import { useEffect, useRef, useState } from "react";
 import { ChoreComposer } from "@/components/parent/chore-composer";
@@ -17,7 +16,6 @@ import {
   SummaryCard,
 } from "@/components/parent/parent-ui";
 import { ReviewCard } from "@/components/parent/review-card";
-import { ChoreDebugState } from "@/components/chore-debug-panel";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { PayoutCalendarModal } from "@/components/payout-calendar-modal";
 import { AppIcon } from "@/components/ui-icons";
@@ -51,8 +49,6 @@ type ParentDashboardProps = {
   chores: Chore[];
   checkIns: CheckIn[];
   payouts: Payout[];
-  rawStoredCheckInsCount: number;
-  routineDebugByChore: Record<string, ChoreDebugState>;
   onSaveChore: (draft: ChoreDraft) => void;
   onDeleteChore: (choreId: string) => void;
   onApprove: (choreId: string) => void;
@@ -89,8 +85,6 @@ export function ParentDashboard({
   chores,
   checkIns,
   payouts,
-  rawStoredCheckInsCount,
-  routineDebugByChore,
   onSaveChore,
   onDeleteChore,
   onApprove,
@@ -423,8 +417,8 @@ export function ParentDashboard({
     }
 
     return draft.dueDate
-      ? `One-time chore due ${formatDate(draft.dueDate)}. Reward is harvested after parent review.`
-      : "One-time chore. Reward is harvested after parent review.";
+      ? `One-time chore due ${formatDate(draft.dueDate)}. Reward is available after parent approval.`
+      : "One-time chore. Reward is available after parent approval.";
   }
 
   function submitDraft() {
@@ -439,9 +433,9 @@ export function ParentDashboard({
   return (
     <div className="space-y-6">
       <section className="grid gap-3 md:grid-cols-3">
-        <SummaryCard accent="from-[#fff0cb] via-[#f1d790] to-[#fff9e8]" icon="seed" label="Ready to harvest" value={formatCurrency(totalUnpaidBalance)} copy="Approved rewards waiting to be paid" />
-        <SummaryCard accent="from-[#e4efd8] via-[#c9dfb4] to-[#fbf8ea]" icon="leaf" label="Needs tending" value={String(awaitingApproval.length)} copy="Submitted chores waiting for review" />
-        <SummaryCard accent="from-[#f4e5bd] via-[#dfc06a] to-[#fff8df]" icon="sprout" label="Harvest history" value={String(payouts.length)} copy="Paid rewards kept in the garden log" />
+        <SummaryCard accent="from-[#fff0cb] via-[#f1d790] to-[#fff9e8]" icon="seed" label="Approved, Unpaid" value={formatCurrency(totalUnpaidBalance)} copy="Approved rewards waiting for payment" />
+        <SummaryCard accent="from-[#e4efd8] via-[#c9dfb4] to-[#fbf8ea]" icon="leaf" label="Pending Review" value={String(awaitingApproval.length)} copy="Submitted chores waiting for approval" />
+        <SummaryCard accent="from-[#f4e5bd] via-[#dfc06a] to-[#fff8df]" icon="sprout" label="Payment History" value={String(payouts.length)} copy="Completed payments on record" />
       </section>
 
       <section className="space-y-4">
@@ -452,12 +446,12 @@ export function ParentDashboard({
                 <span className="kicker-icon"><AppIcon className="h-4 w-4" name="sprout" /></span>
                 Parent garden
               </div>
-              <h2 className="mt-2 font-mono text-3xl font-black">Grow routines for {currentUser.name}</h2>
+              <h2 className="mt-2 font-mono text-3xl font-black">Manage chores for {currentUser.name}</h2>
               <p className="mt-2 max-w-xl text-sm leading-6 text-slate-200">
-                Plant chores, tend required routines, and keep rewards easy to harvest.
+                Create chores, review submissions, and keep rewards and payments clear.
               </p>
             </div>
-            <span className="label-chip label-chip-light">Parent tends the garden</span>
+            <span className="label-chip label-chip-light">Parent manages approvals and payments</span>
           </div>
 
           <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
@@ -495,7 +489,7 @@ export function ParentDashboard({
                     <EmptyState copy="No chores are waiting for review right now." />
                   ) : (
                     awaitingApproval.map((chore) => (
-                      <ReviewCard key={chore.id} checkIns={checkIns} childName={childProfiles.find((child) => child.id === chore.child_id)?.name ?? "Unknown"} chore={chore} chores={chores} debugState={routineDebugByChore[chore.id] ?? null} isRejecting={rejectingId === chore.id} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} rawStoredCheckInsCount={rawStoredCheckInsCount} rejectionNote={rejectionNote} onApprove={onApprove} onReject={onReject} onRejectingChange={setRejectingId} onRejectionNoteChange={setRejectionNote} />
+                      <ReviewCard key={chore.id} checkIns={checkIns} childName={childProfiles.find((child) => child.id === chore.child_id)?.name ?? "Unknown"} chore={chore} chores={chores} isRejecting={rejectingId === chore.id} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} rejectionNote={rejectionNote} onApprove={onApprove} onReject={onReject} onRejectingChange={setRejectingId} onRejectionNoteChange={setRejectionNote} />
                     ))
                   )}
                 </div>
@@ -505,14 +499,14 @@ export function ParentDashboard({
                 <div className="mb-3 flex items-center justify-between">
                   <div className="kicker-row text-slate-500">
                     <span className="kicker-icon"><AppIcon className="h-4 w-4" name="seed" /></span>
-                    Harvest rewards
+                    Record payments
                   </div>
-                  <span className="stat-chip stat-chip-soft">Manual harvest</span>
+                  <span className="stat-chip stat-chip-soft">Manual payment</span>
                 </div>
-                <p className="text-sm leading-6 text-slate-700">Send money outside the app, then log the harvest here so the history stays intact.</p>
-                <textarea className="field-surface mt-3 min-h-22 w-full rounded-2xl px-4 py-3 text-sm text-slate-900" placeholder="Optional harvest note" value={payoutNotes} onChange={(event) => setPayoutNotes(event.target.value)} />
+                <p className="text-sm leading-6 text-slate-700">Send money outside the app, then record the payment here so history stays accurate.</p>
+                <textarea className="field-surface mt-3 min-h-22 w-full rounded-2xl px-4 py-3 text-sm text-slate-900" placeholder="Optional payment note" value={payoutNotes} onChange={(event) => setPayoutNotes(event.target.value)} />
                 <button className="action-button mt-3 w-full rounded-2xl bg-gradient-to-r from-[#6f9a52] to-[#d4ad4f] px-5 py-4 text-base font-black text-[#231d16] shadow-lg shadow-[#3d2b12]/14" onClick={() => { const primaryChild = childProfiles[0]; if (primaryChild) { onMarkPaid(primaryChild.id, payoutNotes); setPayoutNotes(""); } }} type="button">
-                  Mark harvest paid
+                  Record payment
                 </button>
               </div>
             </div>
@@ -520,9 +514,9 @@ export function ParentDashboard({
         </div>
 
         <div className="grid gap-4 lg:grid-cols-2">
-          <ChoreGroup allChores={chores} checkIns={checkIns} chores={availableActive} childProfiles={childProfiles} onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} rawStoredCheckInsCount={rawStoredCheckInsCount} routineDebugByChore={routineDebugByChore} title="Available / active" />
-          <ChoreGroup allChores={chores} checkIns={checkIns} chores={approvedCompleted} childProfiles={childProfiles} onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} rawStoredCheckInsCount={rawStoredCheckInsCount} routineDebugByChore={routineDebugByChore} title="Approved / completed" />
-          <ChoreGroup allChores={chores} checkIns={checkIns} chores={missedExpired} childProfiles={childProfiles} onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} rawStoredCheckInsCount={rawStoredCheckInsCount} routineDebugByChore={routineDebugByChore} title="Missed / expired" />
+          <ChoreGroup allChores={chores} checkIns={checkIns} chores={availableActive} childProfiles={childProfiles} onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Available / active" />
+          <ChoreGroup allChores={chores} checkIns={checkIns} chores={approvedCompleted} childProfiles={childProfiles} onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Approved / completed" />
+          <ChoreGroup allChores={chores} checkIns={checkIns} chores={missedExpired} childProfiles={childProfiles} onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Missed / expired" />
         </div>
 
         <div className="section-shell rounded-[30px] p-5 sm:p-6">
@@ -530,14 +524,14 @@ export function ParentDashboard({
             <div>
               <div className="kicker-row text-slate-500">
                 <span className="kicker-icon"><AppIcon className="h-4 w-4" name="seed" /></span>
-                Harvest history
+                Payment history
               </div>
-              <h3 className="mt-2 font-mono text-2xl font-black text-slate-900">Rewards already harvested</h3>
+              <h3 className="mt-2 font-mono text-2xl font-black text-slate-900">Paid rewards history</h3>
             </div>
             <span className="stat-chip stat-chip-soft">{formatCurrency(payouts.reduce((sum, payout) => sum + payout.amount_cents, 0))}</span>
           </div>
           <div className="space-y-3">
-            {recentPayouts.length === 0 ? <EmptyState copy="No harvests have been recorded yet." /> : recentPayouts.map((payout) => {
+            {recentPayouts.length === 0 ? <EmptyState copy="No payments have been recorded yet." /> : recentPayouts.map((payout) => {
               const payoutChores = chores.filter(
                 (chore) =>
                   chore.child_id === payout.child_id &&
@@ -549,14 +543,14 @@ export function ParentDashboard({
                 <article key={payout.id} className="card-spotlight rounded-[24px] border border-[#d9c075]/45 bg-gradient-to-br from-[#fff8e6] to-white p-4 shadow-[0_16px_30px_rgba(48,35,18,0.08)]">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="support-label">Recent harvest</p>
+                      <p className="support-label">Recent payment</p>
                       <p className="mt-2 text-3xl font-black tracking-[-0.04em] text-slate-900">{formatCurrency(payout.amount_cents)}</p>
                       <p className="text-sm text-slate-600">{formatDate(getLocalDateKey(payout.paid_at))}</p>
                     </div>
                     <span className="stat-chip stat-chip-soft">{payout.paid_method}</span>
                   </div>
                   <p className="mt-2 text-sm text-slate-600">
-                    {payoutChores.length} chore{payoutChores.length === 1 ? "" : "s"} harvested
+                    {payoutChores.length} chore{payoutChores.length === 1 ? "" : "s"} paid
                   </p>
                   {payout.notes ? <p className="mt-2 rounded-2xl bg-white px-3 py-2 text-sm text-slate-600">{payout.notes}</p> : null}
                 </article>
@@ -564,7 +558,7 @@ export function ParentDashboard({
             })}
           </div>
           <button className="action-button mt-4 w-full rounded-2xl bg-gradient-to-r from-[#6f9a52] to-[#d4ad4f] px-5 py-4 text-base font-black text-[#231d16] shadow-lg shadow-[#3d2b12]/14" onClick={() => setIsPayoutCalendarOpen(true)} type="button">
-            View harvest calendar
+            View payment calendar
           </button>
         </div>
       </section>

@@ -96,12 +96,12 @@ export function PayoutCalendarModal({
           <div>
             <div className="kicker-row text-slate-500">
               <span className="kicker-icon"><AppIcon className="h-4 w-4" name="seed" /></span>
-              Recorded harvests only
+              Recorded payments only
             </div>
-            <h3 className="mt-2 font-mono text-2xl font-black text-slate-900">Harvest calendar</h3>
+            <h3 className="mt-2 font-mono text-2xl font-black text-slate-900">Payment calendar</h3>
           </div>
           <button
-            aria-label="Close harvest calendar"
+            aria-label="Close payment calendar"
             className="rounded-full border-2 border-[#3f4f2e] bg-[#fff8e6] px-5 py-3 text-sm font-black text-[#2f271f] shadow-[0_10px_22px_rgba(48,35,18,0.16)] transition hover:bg-[#f1d790]"
             onClick={onClose}
             type="button"
@@ -132,7 +132,7 @@ export function PayoutCalendarModal({
                 )}
               </select>
               <span className="stat-chip stat-chip-soft">
-                {payouts.length} harvest{payouts.length === 1 ? "" : "s"}
+                {payouts.length} payment{payouts.length === 1 ? "" : "s"}
               </span>
             </div>
 
@@ -173,11 +173,11 @@ export function PayoutCalendarModal({
                           {formatCurrency(dayTotal)}
                         </div>
                         <p className="text-[11px] font-bold text-slate-600">
-                          {dayRecords.length} harvest{dayRecords.length === 1 ? "" : "s"}
+                          {dayRecords.length} payment{dayRecords.length === 1 ? "" : "s"}
                         </p>
                       </div>
                     ) : (
-                      <div className="mt-2 text-[11px] text-slate-400">No harvests</div>
+                      <div className="mt-2 text-[11px] text-slate-400">No payments</div>
                     )}
                   </button>
                 );
@@ -188,16 +188,16 @@ export function PayoutCalendarModal({
           <div className="max-h-[72vh] overflow-y-auto px-5 py-5 lg:px-6">
             {!selectedDate ? (
               <div className="rounded-[24px] border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-sm text-slate-600">
-                Pick a harvest date on the calendar to see the reward breakdown.
+                Pick a payment date on the calendar to see the reward breakdown.
               </div>
             ) : selectedDateRecords.length === 0 ? (
               <div className="rounded-[24px] border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-sm text-slate-600">
-                No harvests were recorded on {formatDate(selectedDate)}.
+                No payments were recorded on {formatDate(selectedDate)}.
               </div>
             ) : (
               <div className="space-y-4">
                 <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4">
-                  <p className="support-label">Selected harvest date</p>
+                  <p className="support-label">Selected payment date</p>
                   <p className="mt-2 text-2xl font-black text-slate-900">{formatDate(selectedDate)}</p>
                   <p className="mt-1 text-sm text-slate-600">
                     {formatCurrency(
@@ -205,7 +205,7 @@ export function PayoutCalendarModal({
                         (sum, record) => sum + record.payout.amount_cents,
                         0,
                       ),
-                    )} total harvested
+                    )} total paid
                   </p>
                 </div>
 
@@ -216,7 +216,7 @@ export function PayoutCalendarModal({
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="support-label">Harvest recorded</p>
+                        <p className="support-label">Payment recorded</p>
                         <p className="mt-2 text-3xl font-black tracking-[-0.04em] text-slate-900">
                           {formatCurrency(record.payout.amount_cents)}
                         </p>
@@ -225,7 +225,7 @@ export function PayoutCalendarModal({
                         </p>
                       </div>
                       <span className="stat-chip stat-chip-soft">
-                        {record.chores.length} chore{record.chores.length === 1 ? "" : "s"} harvested
+                        {record.chores.length} chore{record.chores.length === 1 ? "" : "s"} paid
                       </span>
                     </div>
 
@@ -238,7 +238,7 @@ export function PayoutCalendarModal({
                     <div className="mt-4 space-y-3">
                       {record.chores.length === 0 ? (
                         <div className="rounded-2xl bg-white px-3 py-3 text-sm text-slate-600">
-                          No chore breakdown was found for this harvest.
+                          No chore breakdown was found for this payment.
                         </div>
                       ) : (
                         record.chores.map((chore) => {

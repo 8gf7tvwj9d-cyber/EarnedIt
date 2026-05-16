@@ -1,6 +1,5 @@
 /* eslint-disable @next/next/no-img-element */
 
-import { ChoreDebugPanel, ChoreDebugState } from "@/components/chore-debug-panel";
 import { StatusBadge } from "@/components/status-badge";
 import { AppIcon, getChoreIcon } from "@/components/ui-icons";
 import { formatCurrency, formatDate, formatShortDateTime } from "@/lib/format";
@@ -20,11 +19,9 @@ export function ReviewCard({
   chore,
   chores,
   checkIns,
-  debugState,
   childName,
   isRejecting,
   onOpenLightbox,
-  rawStoredCheckInsCount,
   rejectionNote,
   onApprove,
   onReject,
@@ -34,11 +31,9 @@ export function ReviewCard({
   chore: Chore;
   chores: Chore[];
   checkIns: CheckIn[];
-  debugState: ChoreDebugState;
   childName: string;
   isRejecting: boolean;
   onOpenLightbox: (src: string, alt: string) => void;
-  rawStoredCheckInsCount: number;
   rejectionNote: string;
   onApprove: (choreId: string) => void;
   onReject: (choreId: string, note: string) => void;
@@ -119,14 +114,6 @@ export function ReviewCard({
           </div>
         </div>
       ) : null}
-
-      <ChoreDebugPanel
-        checkIns={checkIns}
-        chore={chore}
-        lastSaveState={debugState}
-        rawStoredCheckInsCount={rawStoredCheckInsCount}
-        visibleFilteredCheckInsCount={checkIns.length}
-      />
 
       {isRejecting ? (
         <div className="mt-3 space-y-2">
