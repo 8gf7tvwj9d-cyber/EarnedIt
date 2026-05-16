@@ -1,30 +1,56 @@
-import { ChoreStatus } from "@/lib/chorepay-types";
+import { ChoreStatus } from "@/types/app";
 
 const statusStyles: Record<ChoreStatus, string> = {
-  available: "bg-slate-100/90 text-slate-700 ring-slate-200",
-  submitted: "bg-amber-100/90 text-amber-800 ring-amber-200",
-  approved: "bg-emerald-100/90 text-emerald-800 ring-emerald-200",
-  rejected: "bg-rose-100/90 text-rose-800 ring-rose-200",
-  paid: "bg-sky-100/90 text-sky-800 ring-sky-200",
-  expired: "bg-violet-100/90 text-violet-800 ring-violet-200",
+  available: "bg-white/88 text-[#5f5747] ring-[#d8c8a9] shadow-[0_12px_24px_rgba(48,35,18,0.06)]",
+  submitted: "bg-amber-50/96 text-amber-800 ring-amber-200 shadow-[0_12px_24px_rgba(250,180,45,0.12)]",
+  approved: "bg-[#edf6df]/96 text-[#3f6f2f] ring-[#a7c279] shadow-[0_12px_24px_rgba(95,143,67,0.14)]",
+  rejected: "bg-rose-50/96 text-rose-800 ring-rose-200 shadow-[0_12px_24px_rgba(227,85,111,0.12)]",
+  paid: "bg-[#fff8e6]/96 text-[#6b522c] ring-[#d9c075] shadow-[0_12px_24px_rgba(48,35,18,0.12)]",
+  expired: "bg-[#efe3d1]/96 text-[#7a4d2f] ring-[#c9aa7a] shadow-[0_12px_24px_rgba(126,91,42,0.12)]",
 };
+
+const customStatusStyles = {
+  active: "bg-[#edf6df]/96 text-[#3f6f2f] ring-[#a7c279] shadow-[0_12px_24px_rgba(95,143,67,0.14)]",
+  done_today: "bg-rose-50/96 text-rose-800 ring-rose-200 shadow-[0_12px_24px_rgba(227,85,111,0.12)]",
+  broken: "bg-rose-100/96 text-rose-900 ring-rose-300 shadow-[0_12px_24px_rgba(227,85,111,0.16)]",
+} as const;
 
 const dots: Record<ChoreStatus, string> = {
-  available: "bg-slate-500",
-  submitted: "bg-amber-500",
-  approved: "bg-emerald-500",
-  rejected: "bg-rose-500",
-  paid: "bg-sky-500",
-  expired: "bg-violet-500",
+  available: "#22c55e",
+  submitted: "#f59e0b",
+  approved: "#10b981",
+  rejected: "#f43f5e",
+  paid: "#d8aa3d",
+  expired: "#7a4d2f",
 };
 
-export function StatusBadge({ status }: { status: ChoreStatus }) {
+const customDots = {
+  active: "#22c55e",
+  done_today: "#f43f5e",
+  broken: "#dc2626",
+} as const;
+
+export function StatusBadge({
+  status,
+  label,
+  tone,
+}: {
+  status: ChoreStatus;
+  label?: string;
+  tone?: keyof typeof customStatusStyles;
+}) {
+  const resolvedTone = tone ? customStatusStyles[tone] : statusStyles[status];
+  const resolvedDot = tone ? customDots[tone] : dots[status];
+
   return (
     <span
-      className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-extrabold uppercase tracking-[0.22em] ring-1 ${statusStyles[status]}`}
+      className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-extrabold uppercase tracking-[0.22em] ring-1 backdrop-blur-sm ${resolvedTone}`}
     >
-      <span className={`h-2 w-2 rounded-full ${dots[status]}`} />
-      {status}
+      <span
+        className="inline-block h-2 w-2 shrink-0 rounded-full shadow-[0_0_10px_rgba(255,255,255,0.22)]"
+        style={{ backgroundColor: resolvedDot }}
+      />
+      {label ?? status}
     </span>
   );
 }

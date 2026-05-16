@@ -1,9 +1,22 @@
 import {
+  getDefaultRrcSchedule,
+  getRequiredProgress,
+  getRrcStatus,
+  getTodayKey,
+  isChoreScheduledForDate as getScheduledForDateFromProgress,
+  getNormalizedCheckInsForChore,
+  getLocalDateFromTimestamp,
+  normalizeRrcSchedule,
+} from "@/lib/chore-progress";
+import {
   Chore,
+  CheckIn,
   ChoreProofEntry,
   ChoreStatus,
+  ResetFrequency,
+  RrcSchedule,
   WeekdayKey,
-} from "@/lib/chorepay-types";
+} from "@/types/app";
 
 export const weekdayOptions: { key: WeekdayKey; label: string; short: string }[] = [
   { key: "monday", label: "Monday", short: "Mon" },
@@ -26,12 +39,19 @@ const weekdayMap: Record<number, WeekdayKey> = {
 };
 
 export function getTodayIsoDate() {
-  return new Date().toISOString().slice(0, 10);
+  return getTodayKey();
 }
 
 export function parseIsoDate(date: string) {
   const [year, month, day] = date.split("-").map(Number);
   return new Date(year, month - 1, day);
+}
+
+export function formatLocalIsoDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 export function formatRepeatDays(repeatDays: WeekdayKey[]) {
@@ -54,7 +74,7 @@ export function getRepeatDaysForWeek(chore: Chore, weekIndex: 0 | 1 = 0) {
 }
 
 export function getWeekIndexForDate(chore: Chore, isoDate: string): 0 | 1 {
-  const anchorDate = chore.start_date ?? chore.created_at.slice(0, 10);
+  const anchorDate = chore.start_date ?? getLocalDateFromTimestamp(chore.created_at);
   const current = parseIsoDate(isoDate);
   const anchor = parseIsoDate(anchorDate);
   const dayDiff = Math.max(
@@ -69,9 +89,172 @@ export function getRepeatDaysForDate(chore: Chore, isoDate: string) {
   return getRepeatDaysForWeek(chore, getWeekIndexForDate(chore, isoDate));
 }
 
+export function isOneTimeChore(chore: Chore) {
+  return chore.chore_kind === "one_time";
+}
+
+export function isOptionalChore(chore: Chore) {
+  return chore.chore_kind === "optional";
+}
+
+export function isRoutineChore(chore: Chore) {
+  return chore.chore_kind === "routine";
+}
+
+export function isTemplateChore(chore: Chore) {
+  return chore.is_template;
+}
+
+export function isOptionalTemplateChore(chore: Chore) {
+  return isOptionalChore(chore) && isTemplateChore(chore);
+}
+
+export function isOptionalInstanceChore(chore: Chore) {
+  return isOptionalChore(chore) && !isTemplateChore(chore) && Boolean(chore.template_chore_id);
+}
+
+export function getChoreKindLabel(chore: Chore) {
+  if (isOptionalChore(chore)) {
+    return "Extra earning chore";
+  }
+
+  if (isRoutineChore(chore)) {
+    return "Streak chore";
+  }
+
+  return "One-time chore";
+}
+
+export function isChoreScheduledForDate(chore: Chore, isoDate: string) {
+  return getScheduledForDateFromProgress(chore, isoDate);
+}
+
+export function getResetPeriodKey(isoDate: string, frequency: ResetFrequency) {
+  if (frequency === "daily") {
+    return isoDate;
+  }
+
+  const date = parseIsoDate(isoDate);
+  const start = new Date(date);
+  const day = start.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  start.setDate(start.getDate() + diff);
+  return formatLocalIsoDate(start);
+}
+
+export function getResetLabel(frequency: ResetFrequency) {
+  return frequency === "daily" ? "Resets tomorrow" : "Resets next week";
+}
+
+export function getCurrentPeriodKey(chore: Chore, today = getTodayIsoDate()) {
+  return getResetPeriodKey(today, chore.reset_frequency);
+}
+
+export function getProofEntriesForCurrentReset(
+  chore: Chore,
+  today = getTodayIsoDate(),
+  checkIns: CheckIn[] = [],
+) {
+  const entries = getProofEntries(chore, checkIns);
+  const currentKey = getResetPeriodKey(today, chore.reset_frequency);
+  return entries.filter(
+    (entry) =>
+      getProofDateCandidates(entry).some(
+        (candidate) => getResetPeriodKey(candidate, chore.reset_frequency) === currentKey,
+      ),
+  );
+}
+
+export function getOptionalInstanceForPeriod(
+  chores: Chore[],
+  template: Chore,
+  today = getTodayIsoDate(),
+) {
+  const currentPeriodKey = getCurrentPeriodKey(template, today);
+  return chores.find(
+    (chore) =>
+      chore.template_chore_id === template.id &&
+      chore.instance_period_key === currentPeriodKey,
+  );
+}
+
+export function getOptionalTemplate(chores: Chore[], chore: Chore) {
+  if (isOptionalTemplateChore(chore)) {
+    return chore;
+  }
+
+  if (!chore.template_chore_id) {
+    return null;
+  }
+
+  return chores.find((entry) => entry.id === chore.template_chore_id) ?? null;
+}
+
+export function getOptionalChoreState(
+  chores: Chore[],
+  chore: Chore,
+  today = getTodayIsoDate(),
+  checkIns: CheckIn[] = [],
+) {
+  const template = getOptionalTemplate(chores, chore) ?? chore;
+  const scheduledToday = isChoreScheduledForDate(template, today);
+  const currentPeriodKey = getCurrentPeriodKey(template, today);
+  const currentInstance = isOptionalTemplateChore(chore)
+    ? getOptionalInstanceForPeriod(chores, chore, today)
+    : chore;
+  const currentEntries = currentInstance
+    ? getProofEntriesForCurrentReset(currentInstance, today, checkIns)
+    : [];
+  const completionCount = currentEntries.length;
+  const remainingCompletions = currentInstance ? 0 : template.max_completions_per_reset || 1;
+  const canSubmitToday = Boolean(
+    scheduledToday &&
+      (isOptionalTemplateChore(chore)
+        ? !template.manual_availability && !currentInstance
+        : chore.status === "available" || chore.status === "rejected"),
+  );
+  const helperLabel = currentInstance
+    ? currentInstance.status === "rejected"
+      ? "Needs another photo before resubmitting"
+      : `Submitted for ${template.reset_frequency === "daily" ? "today" : "this period"}`
+    : template.manual_availability
+      ? "Parent needs to make this available"
+      : `Can be done once ${template.reset_frequency === "daily" ? "today" : "this period"}`;
+
+  return {
+    scheduledToday,
+    currentPeriodKey,
+    currentInstance,
+    completionCount,
+    remainingCompletions,
+    canSubmitToday,
+    isOptional: true,
+    helperLabel,
+    resetLabel: getResetLabel(template.reset_frequency),
+  };
+}
+
 export function formatRepeatSchedule(chore: Chore) {
-  if (!chore.recurring) {
+  if (!chore.recurring && isOneTimeChore(chore)) {
     return "One-time";
+  }
+
+  if (isRoutineChore(chore)) {
+    const schedule = normalizeRrcSchedule(chore);
+
+    if (schedule.cycleType === "two_week_custody_block") {
+      return schedule.requiredDateOffsets?.length
+        ? `Two-week block: ${schedule.requiredDateOffsets.length} required dates`
+        : "Two-week block";
+    }
+
+    if (schedule.cycleType === "one_month_block") {
+      return schedule.requiredDateOffsets?.length
+        ? `One-month block: ${schedule.requiredDateOffsets.length} required dates`
+        : "One-month block";
+    }
+
+    return `Weekly: ${formatRepeatDays(schedule.requiredDays)}`;
   }
 
   const weekADays = getRepeatDaysForWeek(chore, 0);
@@ -83,7 +266,18 @@ export function formatRepeatSchedule(chore: Chore) {
   return `Week A: ${formatRepeatDays(weekADays)} | Week B: ${formatRepeatDays(weekBDays)}`;
 }
 
-export function getProofEntries(chore: Chore): ChoreProofEntry[] {
+export function getProofEntries(chore: Chore, checkIns: CheckIn[] = []): ChoreProofEntry[] {
+  const derivedEntries = getNormalizedCheckInsForChore(chore, checkIns).map((entry) => ({
+    id: entry.id,
+    proof_date: entry.check_in_date,
+    photo_url: entry.photo_url,
+    submitted_at: entry.submitted_at,
+  }));
+
+  if (derivedEntries.length > 0) {
+    return derivedEntries;
+  }
+
   if (chore.proof_entries.length > 0) {
     return chore.proof_entries;
   }
@@ -102,19 +296,29 @@ export function getProofEntries(chore: Chore): ChoreProofEntry[] {
   ];
 }
 
+export function getProofDateCandidates(entry: ChoreProofEntry) {
+  const dates = new Set<string>([entry.proof_date]);
+
+  if (entry.submitted_at) {
+    dates.add(formatLocalIsoDate(new Date(entry.submitted_at)));
+  }
+
+  return [...dates];
+}
+
 export function getRollingRequirementDates(chore: Chore) {
-  if (chore.chore_kind !== "rolling") {
+  if (!isRoutineChore(chore)) {
     return [];
   }
 
-  const startDate = chore.start_date ?? chore.created_at.slice(0, 10);
+  const startDate = chore.start_date ?? getLocalDateFromTimestamp(chore.created_at);
   const endDate = chore.due_date ?? startDate;
   const cursor = parseIsoDate(startDate);
   const end = parseIsoDate(endDate);
   const dates: string[] = [];
 
   while (cursor <= end) {
-    const iso = cursor.toISOString().slice(0, 10);
+    const iso = formatLocalIsoDate(cursor);
     const weekday = weekdayMap[cursor.getDay()];
     const repeatDays = getRepeatDaysForDate(chore, iso);
     if (repeatDays.length === 0 || repeatDays.includes(weekday)) {
@@ -126,40 +330,74 @@ export function getRollingRequirementDates(chore: Chore) {
   return dates;
 }
 
-export function getRollingProgress(chore: Chore) {
-  const requiredDates = getRollingRequirementDates(chore);
-  const proofEntries = getProofEntries(chore);
-  const proofDateSet = new Set(proofEntries.map((entry) => entry.proof_date));
-  const today = getTodayIsoDate();
-  const completedDates = requiredDates.filter((date) => proofDateSet.has(date));
-  const missedDates = requiredDates.filter((date) => date < today && !proofDateSet.has(date));
-  const isComplete =
-    requiredDates.length > 0 && completedDates.length === requiredDates.length;
-  const isEligible = isComplete && missedDates.length === 0;
-
+export function getRollingProgress(chore: Chore, checkIns: CheckIn[] = []) {
+  const progress = getRequiredProgress(chore, checkIns, getTodayIsoDate());
   return {
-    requiredDates,
-    completedDates,
-    missedDates,
-    isComplete,
-    isEligible,
-    progressLabel: `${completedDates.length} of ${requiredDates.length} days completed`,
-    missedLabel:
-      missedDates.length > 0
-        ? `Missed ${missedDates.length} day${missedDates.length === 1 ? "" : "s"}`
-        : null,
+    requiredDates: progress.requiredDates,
+    completedDates: progress.completedDates,
+    missedDates: progress.missedDates,
+    isComplete: progress.completedDates.length >= progress.totalNeeded,
+    streakAlive: progress.streakAlive,
+    isEligible: progress.isEligible,
+    progressLabel: progress.progressLabel,
+    missedLabel: progress.missedLabel,
+    streakLabel: progress.streakLabel,
+    canCheckInToday: progress.canCheckInToday,
+    nextRestartDate: progress.nextRestartDate,
   };
 }
 
-export function isChoreExpired(chore: Chore) {
+export function getRequiredRollingStreakStatus(
+  chore: Chore,
+  checkIns: CheckIn[] = [],
+  childId?: string,
+  todayKey = getTodayIsoDate(),
+) {
+  const relevantCheckIns = childId
+    ? checkIns.filter((entry) => entry.child_id === childId)
+    : checkIns;
+  const status = getRrcStatus(chore, relevantCheckIns, childId, todayKey);
+
+  return {
+    cycleId: status.cycleId,
+    cycleStartDate: status.cycleStartDate,
+    cycleEndDate: status.cycleEndDate,
+    requiredDates: status.requiredDates,
+    completedDates: status.completedDates,
+    approvedDates: status.approvedDates,
+    missedDate: status.missedDate,
+    isBroken: status.isBroken,
+    isComplete: status.isComplete,
+    canCheckInToday: status.canCheckInToday,
+    canRestartToday: status.canRestartToday,
+    nextRestartDate: status.nextRestartDate,
+    progressCount: status.progressCount,
+    requiredCount: status.requiredCount,
+    canApprove: status.isComplete && !status.isBroken,
+  };
+}
+
+export function getRoutineProgressDisplay(
+  chore: Chore,
+  checkIns: CheckIn[] = [],
+  today = getTodayIsoDate(),
+) {
+  return getRequiredProgress(chore, checkIns, today);
+}
+
+export function getRoutineDraftSchedule(sourceChore?: Chore): RrcSchedule {
+  return sourceChore ? normalizeRrcSchedule(sourceChore) : getDefaultRrcSchedule();
+}
+
+export function isChoreExpired(chore: Chore, checkIns: CheckIn[] = []) {
   if (chore.status === "paid" || chore.status === "approved") {
     return false;
   }
 
   const today = getTodayIsoDate();
-  if (chore.chore_kind === "rolling") {
-    const progress = getRollingProgress(chore);
-    const endDate = chore.due_date ?? chore.start_date ?? chore.created_at.slice(0, 10);
+  if (isRoutineChore(chore)) {
+    const progress = getRollingProgress(chore, checkIns);
+    const endDate = chore.due_date ?? chore.start_date ?? getLocalDateFromTimestamp(chore.created_at);
     return endDate < today && !progress.isEligible;
   }
 
@@ -170,8 +408,8 @@ export function isChoreExpired(chore: Chore) {
   );
 }
 
-export function getComputedStatus(chore: Chore): ChoreStatus {
-  if (isChoreExpired(chore)) {
+export function getComputedStatus(chore: Chore, checkIns: CheckIn[] = []): ChoreStatus {
+  if (isChoreExpired(chore, checkIns)) {
     return "expired";
   }
 
