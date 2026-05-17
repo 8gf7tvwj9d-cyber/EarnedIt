@@ -32,6 +32,15 @@ const SHARED_TABLE = "household_app_state";
 const DEFAULT_HOUSEHOLD_ID = "family-household-1";
 const LEGACY_DEMO_PARENT_NAME = ["Mor", "gan"].join("");
 const LEGACY_DEMO_CHILD_NAME = ["Ave", "ry"].join("");
+const LEGACY_DEMO_CHORE_TITLES = new Set([
+  ["Feed", " the dog"].join(""),
+  ["Help unload", " groceries"].join(""),
+]);
+const LEGACY_DEMO_CHORE_IDS = new Set([
+  "44444444-4444-4444-4444-444444444441",
+  "44444444-4444-4444-4444-444444444442",
+]);
+const LEGACY_DEMO_PAYOUT_IDS = new Set(["55555555-5555-5555-5555-555555555555"]);
 
 type StoredAppDataPayload = {
   schemaVersion: number;
@@ -105,6 +114,22 @@ function hasLegacyDemoIdentity(candidate: unknown) {
     candidate.users.some((user) => isLegacyDemoParent(user) || isLegacyDemoChild(user)) ||
     candidate.childProfiles.some((profile) => profile.name === LEGACY_DEMO_CHILD_NAME)
   );
+}
+
+function hasLegacyDemoActivity(candidate: unknown) {
+  if (!isAppDataShape(candidate)) {
+    return false;
+  }
+
+  return (
+    candidate.chores.some(
+      (chore) => LEGACY_DEMO_CHORE_IDS.has(chore.id) || LEGACY_DEMO_CHORE_TITLES.has(chore.title),
+    ) || candidate.payouts.some((payout) => LEGACY_DEMO_PAYOUT_IDS.has(payout.id))
+  );
+}
+
+function hasLegacyDemoData(candidate: unknown) {
+  return hasLegacyDemoIdentity(candidate) || hasLegacyDemoActivity(candidate);
 }
 
 function hasConfiguredLocalData(appData: AppData) {
@@ -257,6 +282,10 @@ function getNormalizedDemoData() {
   return normalizeAppData(cloneDemoData());
 }
 
+function getCleanStarterData(currentUserId: string | null = null) {
+  return withDeviceSession(getNormalizedDemoData(), currentUserId);
+}
+
 function normalizeStoredAppData(candidate: unknown): AppData | null {
   if (!isAppDataShape(candidate)) {
     return null;
@@ -301,17 +330,29 @@ export function initializeAppData(): AppDataInitialization {
       const payload = parsed as Partial<StoredAppDataPayload>;
       const normalized = normalizeStoredAppData(payload.appData);
       if (normalized) {
+        if (hasLegacyDemoData(payload.appData)) {
+          return {
+            appData: getCleanStarterData(getDeviceSession(normalized)),
+            shouldPersist: true,
+          };
+        }
+
         return {
           appData: normalized,
-          shouldPersist:
-            payload.schemaVersion !== APP_DATA_SCHEMA_VERSION ||
-            hasLegacyDemoIdentity(payload.appData),
+          shouldPersist: payload.schemaVersion !== APP_DATA_SCHEMA_VERSION,
         };
       }
     }
 
     const normalizedLegacy = normalizeStoredAppData(parsed);
     if (normalizedLegacy) {
+      if (hasLegacyDemoData(parsed)) {
+        return {
+          appData: getCleanStarterData(getDeviceSession(normalizedLegacy)),
+          shouldPersist: true,
+        };
+      }
+
       return {
         appData: normalizedLegacy,
         shouldPersist: true,
@@ -386,13 +427,13 @@ export async function initializeSharedAppData(): Promise<SharedAppDataInitializa
       };
     }
 
-    const remoteHasLegacyDemoIdentity = hasLegacyDemoIdentity(data?.app_data);
-    const localHasLegacyDemoIdentity = hasLegacyDemoIdentity(local.appData);
+    const remoteHasLegacyDemoData = hasLegacyDemoData(data?.app_data);
+    const localHasLegacyDemoData = hasLegacyDemoData(local.appData);
     const remoteCandidate = normalizeStoredAppData(data?.app_data);
     if (remoteCandidate) {
       if (
-        remoteHasLegacyDemoIdentity &&
-        !localHasLegacyDemoIdentity &&
+        remoteHasLegacyDemoData &&
+        !localHasLegacyDemoData &&
         hasConfiguredLocalData(local.appData)
       ) {
         const localSource = withDeviceSession(normalizeAppData(local.appData), deviceSession);
@@ -420,6 +461,34 @@ export async function initializeSharedAppData(): Promise<SharedAppDataInitializa
         console.warn("[Earned] Could not replace legacy shared demo data.", replaceError);
       }
 
+      if (remoteHasLegacyDemoData) {
+        const cleanSource = hasConfiguredLocalData(local.appData)
+          ? withDeviceSession(normalizeAppData(local.appData), deviceSession)
+          : getCleanStarterData(deviceSession);
+        const { error: cleanError } = await supabase
+          .from(SHARED_TABLE)
+          .upsert(
+            {
+              household_id: householdId,
+              app_data: stripSessionForShared(cleanSource),
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "household_id" },
+          );
+
+        if (cleanError) {
+          console.warn("[Earned] Could not clean legacy shared demo data.", cleanError);
+        } else {
+          writeAppData(cleanSource);
+          return {
+            appData: cleanSource,
+            shouldPersist: false,
+            storageMode: "supabase",
+            syncWarning: null,
+          };
+        }
+      }
+
       const merged = withDeviceSession(remoteCandidate, deviceSession);
       writeAppData(merged);
       return {
@@ -430,7 +499,9 @@ export async function initializeSharedAppData(): Promise<SharedAppDataInitializa
       };
     }
 
-    const seeded = withDeviceSession(normalizeAppData(local.appData), deviceSession);
+    const seeded = hasLegacyDemoData(local.appData)
+      ? getCleanStarterData(deviceSession)
+      : withDeviceSession(normalizeAppData(local.appData), deviceSession);
     const { error: seedError } = await supabase
       .from(SHARED_TABLE)
       .upsert(
@@ -537,6 +608,7 @@ export async function pullSharedAppDataSnapshot(
       throw error;
     }
 
+    const remoteHasLegacyDemoData = hasLegacyDemoData(data?.app_data);
     const normalized = normalizeStoredAppData(data?.app_data);
     if (!normalized) {
       return {
@@ -546,7 +618,23 @@ export async function pullSharedAppDataSnapshot(
       };
     }
 
-    const merged = withDeviceSession(normalized, getDeviceSession(localAppData));
+    const merged = remoteHasLegacyDemoData
+      ? hasConfiguredLocalData(localAppData) && !hasLegacyDemoData(localAppData)
+        ? withDeviceSession(normalizeAppData(localAppData), getDeviceSession(localAppData))
+        : getCleanStarterData(getDeviceSession(localAppData))
+      : withDeviceSession(normalized, getDeviceSession(localAppData));
+    if (remoteHasLegacyDemoData) {
+      await supabase
+        .from(SHARED_TABLE)
+        .upsert(
+          {
+            household_id: householdId,
+            app_data: stripSessionForShared(merged),
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "household_id" },
+        );
+    }
     writeAppData(merged);
     return {
       appData: merged,

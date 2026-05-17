@@ -10,7 +10,7 @@ It does not move real money. Parents pay outside the app with something like App
 - Child dashboard to view chores, upload optional photo proof, and submit work
 - Status-driven ledger with `available`, `submitted`, `approved`, `rejected`, and `paid`
 - Pending approval, approved unpaid, and paid-history summaries
-- Local demo mode so the app runs immediately without backend setup
+- Local starter mode so the app runs immediately without backend setup
 - Supabase-ready schema, seed data, and environment variable template
 
 ## Tech
@@ -37,9 +37,9 @@ npm run dev
 
 3. Open [http://localhost:3000](http://localhost:3000)
 
-The app will run in demo mode by default with seeded parent and child accounts stored in `localStorage`.
+The app starts with neutral parent and child roles stored in `localStorage`.
 
-## Demo accounts
+## Starter roles
 
 - Parent: `Parent`
 - Child: `Child`
@@ -59,7 +59,7 @@ Set:
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 
-Right now the UI detects those variables and marks the project as Supabase-connected, but the working MVP intentionally stays demo-first so it can run locally without external services.
+Right now the UI detects those variables and marks the project as Supabase-connected while still supporting local-only use without external services.
 
 ## Database files
 

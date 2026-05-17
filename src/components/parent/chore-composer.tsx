@@ -136,7 +136,7 @@ function ComposerBasicsSection({
       variant="plain"
     >
       <InputLabel dark label="Chore name">
-        <input className="field-surface w-full rounded-2xl px-4 py-4 text-base text-[#2f271f]" placeholder="Feed the dogs" value={draft.title} onChange={(event) => onSetDraft((current) => ({ ...current, title: event.target.value }))} />
+        <input className="field-surface w-full rounded-2xl px-4 py-4 text-base text-[#2f271f]" placeholder="Kitchen cleanup" value={draft.title} onChange={(event) => onSetDraft((current) => ({ ...current, title: event.target.value }))} />
       </InputLabel>
 
       <InputLabel dark label="Description">
