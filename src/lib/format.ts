@@ -10,11 +10,20 @@ export function formatDate(date: string | null) {
     return "No due date";
   }
 
+  const dateOnlyMatch = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const displayDate = dateOnlyMatch
+    ? new Date(
+        Number(dateOnlyMatch[1]),
+        Number(dateOnlyMatch[2]) - 1,
+        Number(dateOnlyMatch[3]),
+      )
+    : new Date(date);
+
   return new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
-  }).format(new Date(date));
+  }).format(displayDate);
 }
 
 export function formatShortDateTime(date: string | null) {

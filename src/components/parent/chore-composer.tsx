@@ -24,7 +24,7 @@ type ChoreComposerProps = {
   onSetComposerOpen: (value: boolean) => void;
   onSetDraft: Dispatch<SetStateAction<ChoreDraft>>;
   onSetRepeatPattern: (pattern: RepeatPattern) => void;
-  onSetRoutineBlockCalendarDate: (isoDate: string) => void;
+  onApplyRoutineBlockCalendarDates: (startDate: string, offsets: number[]) => void;
   onSetRoutineCycleType: (cycleType: ChoreDraft["rrcSchedule"]["cycleType"]) => void;
   onSubmitDraft: () => void;
   onToggleRepeatDay: (day: WeekdayKey, week?: "a" | "b") => void;
@@ -44,7 +44,7 @@ export function ChoreComposer({
   onSetComposerOpen,
   onSetDraft,
   onSetRepeatPattern,
-  onSetRoutineBlockCalendarDate,
+  onApplyRoutineBlockCalendarDates,
   onSetRoutineCycleType,
   onSubmitDraft,
   onToggleRepeatDay,
@@ -97,7 +97,7 @@ export function ChoreComposer({
             onClearRoutineBlockCalendar={onClearRoutineBlockCalendar}
             onSetDraft={onSetDraft}
             onSetRepeatPattern={onSetRepeatPattern}
-            onSetRoutineBlockCalendarDate={onSetRoutineBlockCalendarDate}
+            onApplyRoutineBlockCalendarDates={onApplyRoutineBlockCalendarDates}
             onSetRoutineCycleType={onSetRoutineCycleType}
           />
 
@@ -177,7 +177,7 @@ function ComposerScheduleSection({
   onClearRoutineBlockCalendar,
   onSetDraft,
   onSetRepeatPattern,
-  onSetRoutineBlockCalendarDate,
+  onApplyRoutineBlockCalendarDates,
   onSetRoutineCycleType,
 }: {
   draft: ChoreDraft;
@@ -186,7 +186,7 @@ function ComposerScheduleSection({
   onClearRoutineBlockCalendar: () => void;
   onSetDraft: Dispatch<SetStateAction<ChoreDraft>>;
   onSetRepeatPattern: (pattern: RepeatPattern) => void;
-  onSetRoutineBlockCalendarDate: (isoDate: string) => void;
+  onApplyRoutineBlockCalendarDates: (startDate: string, offsets: number[]) => void;
   onSetRoutineCycleType: (cycleType: ChoreDraft["rrcSchedule"]["cycleType"]) => void;
 }) {
   return (
@@ -275,8 +275,8 @@ function ComposerScheduleSection({
                 cycleType={draft.rrcSchedule.cycleType}
                 selectedOffsets={routineRequiredOffsets}
                 startDate={routineCalendarStart}
+                onApplyDates={onApplyRoutineBlockCalendarDates}
                 onClear={onClearRoutineBlockCalendar}
-                onSelectDate={onSetRoutineBlockCalendarDate}
               />
 
               <div className="rounded-2xl border border-[#d5b873]/35 bg-[#fff8e7]/10 px-4 py-4">

@@ -5,11 +5,8 @@ import { ChoreComposer } from "@/components/parent/chore-composer";
 import { ChoreGroup } from "@/components/parent/chore-group";
 import {
   addDays,
-  getDayDiff,
   getLocalDateKey,
-  getTodayKey,
   getWeekdayForDate,
-  parseIsoDate,
 } from "@/components/parent/parent-date-utils";
 import {
   EmptyState,
@@ -254,21 +251,15 @@ export function ParentDashboard({
     return [...(draft.rrcSchedule.requiredDateOffsets ?? [])].sort((left, right) => left - right);
   }
 
-  function getRoutineWindowEnd(startDate: string, cycleType: ChoreDraft["rrcSchedule"]["cycleType"]) {
-    if (cycleType === "one_month_block") {
-      const monthStart = parseIsoDate(startDate);
-      return getTodayKey(new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0));
-    }
-
-    return addDays(startDate, 13);
-  }
-
-  function getBlockWeeksFromOffsets(offsets: number[]) {
-    if (draft.rrcSchedule.cycleType === "weekly") {
+  function getBlockWeeksFromOffsets(
+    offsets: number[],
+    blockStart = getRoutineCalendarStart(),
+    cycleType = draft.rrcSchedule.cycleType,
+  ) {
+    if (cycleType === "weekly") {
       return [];
     }
 
-    const blockStart = getRoutineCalendarStart();
     if (!blockStart) {
       return [];
     }
@@ -312,49 +303,35 @@ export function ParentDashboard({
     });
   }
 
-  function setRoutineBlockCalendarDate(isoDate: string) {
+  function applyRoutineBlockCalendarDates(startDate: string, offsets: number[]) {
     setDraft((current) => {
       if (current.rrcSchedule.cycleType === "weekly") {
         return current;
       }
 
-      const cycleType = current.rrcSchedule.cycleType;
-      const existingStart = current.startDate || current.rrcSchedule.custodyPattern?.baseWeekendStartDate || "";
-      const anchorDate =
-        cycleType === "one_month_block"
-          ? `${isoDate.slice(0, 7)}-01`
-          : isoDate;
-      const nextStart = existingStart || anchorDate;
-      const windowStart = nextStart;
-      const windowEnd = getRoutineWindowEnd(windowStart, cycleType);
-
-      if (isoDate < windowStart || isoDate > windowEnd) {
-        return current;
-      }
-
-      const offset = getDayDiff(windowStart, isoDate);
-      const existingOffsets = [...(current.rrcSchedule.requiredDateOffsets ?? [])];
-      const nextOffsets = existingOffsets.includes(offset)
-        ? existingOffsets.filter((entry) => entry !== offset)
-        : [...existingOffsets, offset];
+      const nextOffsets = [...offsets];
       nextOffsets.sort((left, right) => left - right);
 
       return {
         ...current,
         recurring: true,
-        startDate: nextStart,
+        startDate,
         rrcSchedule: {
           ...current.rrcSchedule,
           requiredDays: [],
           requiredDateOffsets: nextOffsets,
-          blockWeeks: getBlockWeeksFromOffsets(nextOffsets),
+          blockWeeks: getBlockWeeksFromOffsets(
+            nextOffsets,
+            startDate,
+            current.rrcSchedule.cycleType,
+          ),
           custodyPattern: {
             ...(current.rrcSchedule.custodyPattern ?? {
               baseWeekendStartDate: null,
               weekdayDays: [],
               alternatingWeekendDays: [],
             }),
-            baseWeekendStartDate: nextStart,
+            baseWeekendStartDate: startDate,
           },
         },
       };
@@ -476,7 +453,7 @@ export function ParentDashboard({
               onSetComposerOpen={setIsComposerOpen}
               onSetDraft={setDraft}
               onSetRepeatPattern={setRepeatPattern}
-              onSetRoutineBlockCalendarDate={setRoutineBlockCalendarDate}
+              onApplyRoutineBlockCalendarDates={applyRoutineBlockCalendarDates}
               onSetRoutineCycleType={setRoutineCycleType}
               onSubmitDraft={submitDraft}
               onToggleRepeatDay={toggleRepeatDay}
