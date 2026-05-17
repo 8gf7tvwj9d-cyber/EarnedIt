@@ -29,6 +29,7 @@ import {
   isOptionalInstanceChore,
   isOptionalTemplateChore,
 } from "@/lib/chore-helpers";
+import { formatCentsForDollarInput } from "@/lib/money";
 import {
   Chore,
   ChoreDraft,
@@ -133,7 +134,7 @@ export function ParentDashboard({
       id: sourceChore.id,
       title: sourceChore.title,
       description: sourceChore.description,
-      amount: (sourceChore.amount_cents / 100).toFixed(2),
+      amount: formatCentsForDollarInput(sourceChore.amount_cents),
       childId: sourceChore.child_id,
       startDate: formatDateInput(sourceChore.start_date),
       dueDate: formatDateInput(sourceChore.due_date),

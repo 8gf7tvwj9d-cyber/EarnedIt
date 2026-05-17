@@ -1,8 +1,10 @@
+import { normalizeCents } from "@/lib/money";
+
 export function formatCurrency(amountCents: number) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
-  }).format(amountCents / 100);
+  }).format(normalizeCents(amountCents) / 100);
 }
 
 export function formatDate(date: string | null) {

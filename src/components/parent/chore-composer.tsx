@@ -139,7 +139,7 @@ function ComposerBasicsSection({
 
       <div className="grid gap-3 sm:grid-cols-2">
         <InputLabel dark label="Reward amount">
-          <input className="field-surface w-full rounded-2xl px-4 py-4 text-base text-[#2f271f]" min="0" placeholder="10.00" step="0.01" type="number" value={draft.amount} onChange={(event) => onSetDraft((current) => ({ ...current, amount: event.target.value }))} />
+          <input className="field-surface w-full rounded-2xl px-4 py-4 text-base text-[#2f271f]" inputMode="decimal" pattern="^[$]?[0-9]*([.][0-9]{0,2})?$" placeholder="10.00" type="text" value={draft.amount} onChange={(event) => onSetDraft((current) => ({ ...current, amount: event.target.value }))} />
         </InputLabel>
         <InputLabel dark label="Assigned child">
           <select className="field-surface w-full rounded-2xl px-4 py-4 text-base text-[#2f271f]" value={draft.childId} onChange={(event) => onSetDraft((current) => ({ ...current, childId: event.target.value }))}>

@@ -14,6 +14,7 @@ import {
   normalizeRrcSchedule,
 } from "@/lib/chore-progress";
 import { demoData } from "@/lib/storage/demo-data";
+import { normalizeCents, parseMoneyToCents } from "@/lib/money";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import {
   AppData,
@@ -207,6 +208,7 @@ function migrateLegacyDemoNames(appData: AppData): AppData {
 }
 
 function normalizeChore(chore: Chore): Chore {
+  const choreRecord = chore as Chore & { amount?: unknown };
   const weeklyDays = chore.repeat_days ?? [];
   const legacyKind = chore.chore_kind as string;
   const normalizedKind =
@@ -229,6 +231,7 @@ function normalizeChore(chore: Chore): Chore {
     chore_kind: normalizedKind ?? "one_time",
     reset_frequency: chore.reset_frequency ?? "daily",
     max_completions_per_reset: chore.max_completions_per_reset ?? 1,
+    amount_cents: normalizeCents(chore.amount_cents, choreRecord.amount),
     manual_availability: chore.manual_availability ?? false,
     total_required_completions: chore.total_required_completions ?? null,
     payout_rule: chore.payout_rule ?? "all_or_nothing",
@@ -253,6 +256,10 @@ function normalizeChore(chore: Chore): Chore {
 function normalizeAppData(appData: AppData): AppData {
   const migratedAppData = stripLegacyDemoActivity(migrateLegacyDemoNames(appData));
   const normalizedChores = migratedAppData.chores.map((chore) => normalizeChore(chore));
+  const normalizedPayouts = migratedAppData.payouts.map((payout) => ({
+    ...payout,
+    amount_cents: normalizeCents(payout.amount_cents),
+  }));
   const existingCheckIns = appData.checkIns ?? [];
   const existingKeys = new Set(
     existingCheckIns.map((entry) => `${entry.chore_id}:${entry.check_in_date}`),
@@ -280,6 +287,7 @@ function normalizeAppData(appData: AppData): AppData {
     checkIns: [...existingCheckIns, ...migratedRoutineCheckIns].sort((left, right) =>
       left.check_in_date.localeCompare(right.check_in_date),
     ),
+    payouts: normalizedPayouts,
   };
 }
 
@@ -723,7 +731,7 @@ export function saveChore(
 ): AppData {
   const timestamp = new Date().toISOString();
   const localDate = formatLocalIsoDate(new Date(timestamp));
-  const amountCents = Math.round(Number(draft.amount || "0") * 100);
+  const amountCents = parseMoneyToCents(draft.amount);
   const isOptionalTemplate = draft.choreKind === "optional";
   const sharedRepeatingSchedule: RrcSchedule | null =
     draft.choreKind === "routine" || draft.choreKind === "optional"
