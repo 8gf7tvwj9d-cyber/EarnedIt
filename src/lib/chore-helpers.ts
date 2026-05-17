@@ -239,18 +239,19 @@ export function formatRepeatSchedule(chore: Chore) {
     return "One-time";
   }
 
-  if (isRoutineChore(chore)) {
+  if (isRoutineChore(chore) || (isOptionalChore(chore) && chore.rrc_schedule)) {
     const schedule = normalizeRrcSchedule(chore);
+    const dateLabel = isRoutineChore(chore) ? "required dates" : "days available";
 
     if (schedule.cycleType === "two_week_custody_block") {
       return schedule.requiredDateOffsets?.length
-        ? `Two-week block: ${schedule.requiredDateOffsets.length} required dates`
+        ? `Two-week block: ${schedule.requiredDateOffsets.length} ${dateLabel}`
         : "Two-week block";
     }
 
     if (schedule.cycleType === "one_month_block") {
       return schedule.requiredDateOffsets?.length
-        ? `One-month block: ${schedule.requiredDateOffsets.length} required dates`
+        ? `One-month block: ${schedule.requiredDateOffsets.length} ${dateLabel}`
         : "One-month block";
     }
 

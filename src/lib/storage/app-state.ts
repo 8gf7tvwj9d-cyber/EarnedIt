@@ -235,7 +235,7 @@ function normalizeChore(chore: Chore): Chore {
     miss_behavior: chore.miss_behavior ?? "fail_period",
     only_when_child_present: chore.only_when_child_present ?? false,
     rrc_schedule:
-      normalizedKind === "routine"
+      normalizedKind === "routine" || (normalizedKind === "optional" && chore.rrc_schedule)
         ? normalizeRrcSchedule({
             ...chore,
             start_date: chore.start_date,
@@ -725,8 +725,8 @@ export function saveChore(
   const localDate = formatLocalIsoDate(new Date(timestamp));
   const amountCents = Math.round(Number(draft.amount || "0") * 100);
   const isOptionalTemplate = draft.choreKind === "optional";
-  const routineSchedule: RrcSchedule | null =
-    draft.choreKind === "routine"
+  const sharedRepeatingSchedule: RrcSchedule | null =
+    draft.choreKind === "routine" || draft.choreKind === "optional"
       ? {
           ...draft.rrcSchedule,
           cycleType:
@@ -753,6 +753,7 @@ export function saveChore(
               : null,
         }
       : null;
+  const usesSharedRepeatingSchedule = Boolean(sharedRepeatingSchedule);
   const baseRecord = {
     parent_id: parent.id,
     child_id: draft.childId,
@@ -760,25 +761,25 @@ export function saveChore(
     description: draft.description.trim(),
     amount_cents: amountCents,
     start_date:
-      draft.choreKind === "routine"
-        ? routineSchedule?.cycleType === "two_week_custody_block"
-          ? routineSchedule.custodyPattern?.baseWeekendStartDate || draft.startDate || null
+      usesSharedRepeatingSchedule
+        ? sharedRepeatingSchedule?.cycleType === "two_week_custody_block"
+          ? sharedRepeatingSchedule.custodyPattern?.baseWeekendStartDate || draft.startDate || null
           : draft.startDate || null
         : draft.startDate || localDate,
     due_date: draft.dueDate || null,
-    recurring: draft.choreKind === "routine" ? true : draft.recurring,
+    recurring: usesSharedRepeatingSchedule ? true : draft.recurring,
     repeat_days:
-      draft.choreKind === "routine" ? draft.rrcSchedule.requiredDays : draft.repeatDaysWeekA,
+      usesSharedRepeatingSchedule ? draft.rrcSchedule.requiredDays : draft.repeatDaysWeekA,
     repeat_pattern:
-      draft.choreKind === "routine"
+      usesSharedRepeatingSchedule
         ? draft.rrcSchedule.cycleType === "two_week_custody_block"
           ? "biweekly"
           : "weekly"
         : draft.repeatPattern,
     repeat_days_week_a:
-      draft.choreKind === "routine" ? draft.rrcSchedule.requiredDays : draft.repeatDaysWeekA,
+      usesSharedRepeatingSchedule ? draft.rrcSchedule.requiredDays : draft.repeatDaysWeekA,
     repeat_days_week_b:
-      draft.choreKind === "routine"
+      usesSharedRepeatingSchedule
         ? []
         : draft.repeatPattern === "biweekly"
           ? draft.repeatDaysWeekB
@@ -792,7 +793,7 @@ export function saveChore(
     payout_rule: draft.payoutRule,
     miss_behavior: draft.choreKind === "routine" ? "fail_period" : draft.missBehavior,
     only_when_child_present: draft.onlyWhenChildPresent,
-    rrc_schedule: routineSchedule,
+    rrc_schedule: sharedRepeatingSchedule,
     is_template: isOptionalTemplate,
     template_chore_id: null,
     instance_period_key: null,

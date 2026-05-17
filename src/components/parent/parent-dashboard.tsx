@@ -35,7 +35,6 @@ import {
   CheckIn,
   ChildProfile,
   Payout,
-  RepeatPattern,
   User,
   WeekdayKey,
 } from "@/types/app";
@@ -172,40 +171,6 @@ export function ParentDashboard({
     });
   }
 
-  function toggleRepeatDay(day: WeekdayKey, week: "a" | "b" = "a") {
-    setDraft((current) => ({
-      ...current,
-      recurring: true,
-      repeatDaysWeekA:
-        week === "a"
-          ? current.repeatDaysWeekA.includes(day)
-            ? current.repeatDaysWeekA.filter((entry) => entry !== day)
-            : [...current.repeatDaysWeekA, day]
-          : current.repeatDaysWeekA,
-      repeatDaysWeekB:
-        week === "b"
-          ? current.repeatDaysWeekB.includes(day)
-            ? current.repeatDaysWeekB.filter((entry) => entry !== day)
-            : [...current.repeatDaysWeekB, day]
-          : current.repeatDaysWeekB,
-      repeatDays:
-        week === "a"
-          ? current.repeatDays.includes(day)
-            ? current.repeatDays.filter((entry) => entry !== day)
-            : [...current.repeatDays, day]
-          : current.repeatDays,
-    }));
-  }
-
-  function setRepeatPattern(pattern: RepeatPattern) {
-    setDraft((current) => ({
-      ...current,
-      recurring: true,
-      repeatPattern: pattern,
-      repeatDaysWeekB: pattern === "weekly" ? [] : current.repeatDaysWeekB,
-    }));
-  }
-
   function setRoutineCycleType(cycleType: ChoreDraft["rrcSchedule"]["cycleType"]) {
     setDraft((current) => {
       const nextCycleType =
@@ -221,6 +186,12 @@ export function ParentDashboard({
       return {
         ...current,
         recurring: true,
+        repeatPattern: nextCycleType === "two_week_custody_block" ? "biweekly" : "weekly",
+        repeatDays:
+          nextCycleType === "weekly" ? current.rrcSchedule.requiredDays : [],
+        repeatDaysWeekA:
+          nextCycleType === "weekly" ? current.rrcSchedule.requiredDays : [],
+        repeatDaysWeekB: [],
         startDate: nextCycleType === "weekly" ? "" : currentStartDate,
         rrcSchedule: {
           ...current.rrcSchedule,
@@ -293,6 +264,10 @@ export function ParentDashboard({
       return {
         ...current,
         recurring: true,
+        repeatDays: requiredDays,
+        repeatDaysWeekA: requiredDays,
+        repeatDaysWeekB: [],
+        repeatPattern: "weekly",
         rrcSchedule: {
           ...current.rrcSchedule,
           requiredDays,
@@ -315,6 +290,11 @@ export function ParentDashboard({
       return {
         ...current,
         recurring: true,
+        repeatDays: [],
+        repeatDaysWeekA: [],
+        repeatDaysWeekB: [],
+        repeatPattern:
+          current.rrcSchedule.cycleType === "two_week_custody_block" ? "biweekly" : "weekly",
         startDate,
         rrcSchedule: {
           ...current.rrcSchedule,
@@ -342,6 +322,10 @@ export function ParentDashboard({
     setDraft((current) => ({
       ...current,
       startDate: "",
+      repeatDays: current.rrcSchedule.cycleType === "weekly" ? current.repeatDays : [],
+      repeatDaysWeekA:
+        current.rrcSchedule.cycleType === "weekly" ? current.repeatDaysWeekA : [],
+      repeatDaysWeekB: [],
       rrcSchedule: {
         ...current.rrcSchedule,
         requiredDateOffsets: [],
@@ -364,13 +348,15 @@ export function ParentDashboard({
   function getScheduleSummary() {
     if (draft.choreKind === "optional") {
       const scheduleLabel =
-        draft.repeatPattern === "biweekly"
-          ? `Week A: ${formatRepeatDays(draft.repeatDaysWeekA)}. Week B: ${formatRepeatDays(draft.repeatDaysWeekB)}.`
-          : `Available on ${formatRepeatDays(draft.repeatDaysWeekA)}.`;
+        draft.rrcSchedule.cycleType === "two_week_custody_block"
+          ? `Two-week block dates selected: ${getRoutineRequiredOffsets().length}.`
+          : draft.rrcSchedule.cycleType === "one_month_block"
+            ? `One-month block dates selected: ${getRoutineRequiredOffsets().length}.`
+            : `Available on ${formatRepeatDays(draft.rrcSchedule.requiredDays)}.`;
       const resetLabel =
         draft.resetFrequency === "daily" ? "Available once per day. Resets tomorrow." : "Available once per week. Resets next week.";
 
-      return `${resetLabel} ${draft.recurring ? scheduleLabel : "Parent opens this chore manually."}`;
+      return `${resetLabel} ${scheduleLabel} Optional days do not affect streaks.`;
     }
 
     if (draft.choreKind === "routine") {
@@ -404,7 +390,7 @@ export function ParentDashboard({
     }
 
     if (
-      draft.choreKind === "routine" &&
+      (draft.choreKind === "routine" || draft.choreKind === "optional") &&
       draft.rrcSchedule.cycleType !== "weekly" &&
       (!getRoutineCalendarStart() || getRoutineRequiredOffsets().length === 0)
     ) {
@@ -452,11 +438,9 @@ export function ParentDashboard({
               onResetDraft={resetDraft}
               onSetComposerOpen={setIsComposerOpen}
               onSetDraft={setDraft}
-              onSetRepeatPattern={setRepeatPattern}
               onApplyRoutineBlockCalendarDates={applyRoutineBlockCalendarDates}
               onSetRoutineCycleType={setRoutineCycleType}
               onSubmitDraft={submitDraft}
-              onToggleRepeatDay={toggleRepeatDay}
               onToggleRoutineSimpleDay={toggleRoutineSimpleDay}
             />
 

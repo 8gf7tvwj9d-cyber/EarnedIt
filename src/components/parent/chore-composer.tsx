@@ -9,7 +9,7 @@ import {
   ScheduleSummary,
 } from "@/components/parent/parent-ui";
 import { AppIcon } from "@/components/ui-icons";
-import { ChoreDraft, ChildProfile, RepeatPattern, WeekdayKey } from "@/types/app";
+import { ChoreDraft, ChildProfile, WeekdayKey } from "@/types/app";
 
 type ChoreComposerProps = {
   childProfiles: ChildProfile[];
@@ -23,11 +23,9 @@ type ChoreComposerProps = {
   onResetDraft: () => void;
   onSetComposerOpen: (value: boolean) => void;
   onSetDraft: Dispatch<SetStateAction<ChoreDraft>>;
-  onSetRepeatPattern: (pattern: RepeatPattern) => void;
   onApplyRoutineBlockCalendarDates: (startDate: string, offsets: number[]) => void;
   onSetRoutineCycleType: (cycleType: ChoreDraft["rrcSchedule"]["cycleType"]) => void;
   onSubmitDraft: () => void;
-  onToggleRepeatDay: (day: WeekdayKey, week?: "a" | "b") => void;
   onToggleRoutineSimpleDay: (day: WeekdayKey) => void;
 };
 
@@ -43,11 +41,9 @@ export function ChoreComposer({
   onResetDraft,
   onSetComposerOpen,
   onSetDraft,
-  onSetRepeatPattern,
   onApplyRoutineBlockCalendarDates,
   onSetRoutineCycleType,
   onSubmitDraft,
-  onToggleRepeatDay,
   onToggleRoutineSimpleDay,
 }: ChoreComposerProps) {
   return (
@@ -96,14 +92,12 @@ export function ChoreComposer({
             routineRequiredOffsets={routineRequiredOffsets}
             onClearRoutineBlockCalendar={onClearRoutineBlockCalendar}
             onSetDraft={onSetDraft}
-            onSetRepeatPattern={onSetRepeatPattern}
             onApplyRoutineBlockCalendarDates={onApplyRoutineBlockCalendarDates}
             onSetRoutineCycleType={onSetRoutineCycleType}
           />
 
           <ComposerRequiredDaysSection
             draft={draft}
-            onToggleRepeatDay={onToggleRepeatDay}
             onToggleRoutineSimpleDay={onToggleRoutineSimpleDay}
           />
 
@@ -176,7 +170,6 @@ function ComposerScheduleSection({
   routineRequiredOffsets,
   onClearRoutineBlockCalendar,
   onSetDraft,
-  onSetRepeatPattern,
   onApplyRoutineBlockCalendarDates,
   onSetRoutineCycleType,
 }: {
@@ -185,7 +178,6 @@ function ComposerScheduleSection({
   routineRequiredOffsets: number[];
   onClearRoutineBlockCalendar: () => void;
   onSetDraft: Dispatch<SetStateAction<ChoreDraft>>;
-  onSetRepeatPattern: (pattern: RepeatPattern) => void;
   onApplyRoutineBlockCalendarDates: (startDate: string, offsets: number[]) => void;
   onSetRoutineCycleType: (cycleType: ChoreDraft["rrcSchedule"]["cycleType"]) => void;
 }) {
@@ -222,29 +214,7 @@ function ComposerScheduleSection({
         </div>
       </div>
 
-      {draft.choreKind === "optional" ? (
-        <div className="rounded-2xl border border-[#d5b873]/35 bg-[#fff8e7]/10 px-4 py-4">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-base font-black text-[#fff7df]">Availability</p>
-              <p className="mt-1 text-sm leading-6 text-[#d8cab1]">Choose whether this repeats on a weekly rhythm.</p>
-            </div>
-            <input checked={draft.recurring} className="h-6 w-6 accent-[#4f7f3a]" type="checkbox" onChange={(event) => onSetDraft((current) => ({ ...current, recurring: event.target.checked }))} />
-          </div>
-          {draft.recurring ? (
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button className={`setup-chip ${draft.repeatPattern === "weekly" ? "setup-chip-selected" : ""}`} onClick={() => onSetRepeatPattern("weekly")} type="button">
-                Same every week
-              </button>
-              <button className={`setup-chip ${draft.repeatPattern === "biweekly" ? "setup-chip-selected" : ""}`} onClick={() => onSetRepeatPattern("biweekly")} type="button">
-                Alternate every 2 weeks
-              </button>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
-      {draft.choreKind === "routine" ? (
+      {draft.choreKind === "optional" || draft.choreKind === "routine" ? (
         <>
           <InputLabel dark label="Block type">
             <select
@@ -266,7 +236,9 @@ function ComposerScheduleSection({
             <div className="rounded-2xl border border-[#d5b873]/35 bg-[#fff8e7]/10 px-4 py-4">
               <p className="text-base font-black text-[#fff7df]">Week starts on Sunday</p>
               <p className="mt-1 text-sm leading-6 text-[#d8cab1]">
-                Weekly required chores reset on the next Sunday if a required day is missed.
+                {draft.choreKind === "optional"
+                  ? "Weekly repeating chores are simply available on the selected days."
+                  : "Weekly required chores reset on the next Sunday if a required day is missed."}
               </p>
             </div>
           ) : (
@@ -282,7 +254,9 @@ function ComposerScheduleSection({
               <div className="rounded-2xl border border-[#d5b873]/35 bg-[#fff8e7]/10 px-4 py-4">
                 <p className="text-base font-black text-[#fff7df]">Restart rule</p>
                 <p className="mt-1 text-sm leading-6 text-[#d8cab1]">
-                  If the streak breaks, it restarts only at the next cycle start.
+                  {draft.choreKind === "optional"
+                    ? "Skipping optional days does not break a streak or create a missed state."
+                    : "If the streak breaks, it restarts only at the next cycle start."}
                 </p>
               </div>
             </>
@@ -295,16 +269,14 @@ function ComposerScheduleSection({
 
 function ComposerRequiredDaysSection({
   draft,
-  onToggleRepeatDay,
   onToggleRoutineSimpleDay,
 }: {
   draft: ChoreDraft;
-  onToggleRepeatDay: (day: WeekdayKey, week?: "a" | "b") => void;
   onToggleRoutineSimpleDay: (day: WeekdayKey) => void;
 }) {
   if (
     !(
-      (draft.choreKind === "optional" && draft.recurring) ||
+      (draft.choreKind === "optional" && draft.rrcSchedule.cycleType === "weekly") ||
       (draft.choreKind === "routine" && draft.rrcSchedule.cycleType === "weekly")
     )
   ) {
@@ -330,13 +302,11 @@ function ComposerRequiredDaysSection({
       variant="standout"
     >
       {draft.choreKind === "optional" ? (
-        <>
-          <RepeatWeekPicker days={draft.repeatDaysWeekA} label={draft.repeatPattern === "biweekly" ? "Week A" : "Weekly schedule"} onToggle={(day) => onToggleRepeatDay(day, "a")} />
-
-          {draft.repeatPattern === "biweekly" ? (
-            <RepeatWeekPicker accent="warm" days={draft.repeatDaysWeekB} label="Week B" onToggle={(day) => onToggleRepeatDay(day, "b")} />
-          ) : null}
-        </>
+        <RepeatWeekPicker
+          days={draft.rrcSchedule.requiredDays}
+          label="Days available"
+          onToggle={onToggleRoutineSimpleDay}
+        />
       ) : (
         <RepeatWeekPicker
           days={draft.rrcSchedule.requiredDays}

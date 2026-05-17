@@ -423,7 +423,7 @@ export function isChoreScheduledForDate(chore: Chore, isoDate: string) {
     );
   }
 
-  if (chore.chore_kind === "routine") {
+  if (chore.chore_kind === "routine" || (chore.chore_kind === "optional" && chore.rrc_schedule)) {
     const cycleWindow = getRrcCycleWindow(chore, isoDate);
     return getRequiredDatesForRrcCycle(chore, cycleWindow).includes(isoDate);
   }
