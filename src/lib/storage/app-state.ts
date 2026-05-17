@@ -26,7 +26,7 @@ import {
   User,
 } from "@/types/app";
 
-const STORAGE_KEY = "chorepay-family-store";
+const STORAGE_KEY = "chorepay-family-store-v2";
 const APP_DATA_SCHEMA_VERSION = 1;
 const SHARED_TABLE = "household_app_state";
 const DEFAULT_HOUSEHOLD_ID = "family-household-1";
