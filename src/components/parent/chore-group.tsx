@@ -132,7 +132,7 @@ export function ChoreGroup({
                 </button>
               ) : null}
               {chore.rejection_note ? <p className="mt-3 rounded-2xl bg-rose-50/90 px-3 py-2 text-sm text-rose-800">{chore.rejection_note}</p> : null}
-              <div className="mt-4 flex gap-2">
+              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
                 <button className="action-button flex-1 rounded-2xl border border-white/18 bg-white/10 px-4 py-3 font-black text-white" onClick={() => onEdit(chore)} type="button">Edit</button>
                 <button className="action-button flex-1 rounded-2xl border border-rose-300/30 bg-rose-400/16 px-4 py-3 font-black text-rose-100" onClick={() => onDeleteChore(chore.id)} type="button">Delete</button>
               </div>

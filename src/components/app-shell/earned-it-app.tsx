@@ -58,6 +58,10 @@ export function ChorePayApp() {
         return;
       }
 
+      if (initialState.shouldPersist) {
+        writeAppData(initialState.appData);
+      }
+
       setAppData(initialState.appData);
       setStorageMode(initialState.storageMode);
       setSyncWarning(initialState.syncWarning);
@@ -150,7 +154,7 @@ export function ChorePayApp() {
     }
 
     updateAppData(setCurrentUser(appData, user.id));
-    pushToast(`Signed in as ${user.name}`);
+    pushToast(`Signed in as ${getRoleDisplayName(appData, role)}`);
   }
 
   function handleFatalReset() {
@@ -246,7 +250,7 @@ export function ChorePayApp() {
                 onClick={() => signInAs("parent")}
                 type="button"
               >
-                Brandon (Parent)
+                {getRoleDisplayName(appData, "parent")} (Parent)
               </button>
               <button
                 className={`rounded-full px-4 py-2.5 text-sm font-black ${
@@ -257,7 +261,7 @@ export function ChorePayApp() {
                 onClick={() => signInAs("child")}
                 type="button"
               >
-                Cynthia (Child)
+                {getRoleDisplayName(appData, "child")} (Child)
               </button>
             </div>
             {syncWarning ? (
@@ -296,7 +300,7 @@ export function ChorePayApp() {
                       <span className="kicker-icon">
                         <AppIcon className="h-4 w-4" name="seed" />
                       </span>
-                      Brandon
+                      {getRoleDisplayName(appData, "parent")}
                     </span>
                     <span className="mt-3 block text-2xl font-black">Plant routines</span>
                     <span className="mt-2 block text-sm leading-6 text-slate-600">
@@ -313,7 +317,7 @@ export function ChorePayApp() {
                       <span className="kicker-icon">
                         <AppIcon className="h-4 w-4" name="sprout" />
                       </span>
-                      Cynthia
+                      {getRoleDisplayName(appData, "child")}
                     </span>
                     <span className="mt-3 block text-2xl font-black">Grow rewards</span>
                     <span className="mt-2 block text-sm leading-6 text-slate-700">
@@ -432,7 +436,7 @@ export function ChorePayApp() {
               onSubmitRollingChore={(choreId) => {
                 void enqueueMutation(async (snapshot) => {
                   await syncAppData(submitRollingChore(snapshot, choreId));
-                  pushToast("Routine chore submitted for review");
+                  pushToast("Repeating chore submitted for review");
                 });
               }}
             />
@@ -457,6 +461,20 @@ export function ChorePayApp() {
       </main>
     </AppCrashBoundary>
   );
+}
+
+function getRoleDisplayName(appData: AppData, role: "parent" | "child") {
+  const user = appData.users.find((candidate) => candidate.role === role);
+  if (user?.name?.trim()) {
+    return user.name.trim();
+  }
+
+  if (role === "child") {
+    const childProfileName = appData.childProfiles[0]?.name?.trim();
+    return childProfileName || "Child";
+  }
+
+  return "Parent";
 }
 
 function FeatureCard({

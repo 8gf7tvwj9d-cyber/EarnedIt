@@ -779,3 +779,122 @@ button:active {
     transform: none;
   }
 }
+
+@media (max-width: 640px) {
+  body {
+    overflow-x: hidden;
+  }
+
+  main {
+    padding-left: 0.25rem !important;
+    padding-right: 0.25rem !important;
+    padding-top: 0.5rem !important;
+    padding-bottom: 1.25rem !important;
+  }
+
+  .app-shell {
+    border-radius: 1.35rem !important;
+    padding: 0.5rem !important;
+    border-left: 0;
+    border-right: 0;
+  }
+
+  .hero-mesh,
+  .panel-strong,
+  .panel-soft,
+  .section-shell,
+  .tree-progress-panel {
+    border-radius: 1.35rem !important;
+  }
+
+  .hero-mesh {
+    margin-bottom: 1rem !important;
+    padding: 1rem !important;
+  }
+
+  .panel-strong,
+  .panel-soft,
+  .section-shell,
+  .tree-progress-panel,
+  .surface-tint {
+    padding: 1rem !important;
+  }
+
+  .metric-card,
+  .child-card,
+  .parent-card,
+  .card-spotlight,
+  .review-photo {
+    border-radius: 1.15rem !important;
+  }
+
+  .metric-card {
+    min-height: auto;
+    padding: 1rem !important;
+  }
+
+  .child-card,
+  .parent-card {
+    padding: 1rem !important;
+  }
+
+  .child-card > div:first-child,
+  .parent-card > div:first-child {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .child-card > div:first-child > div:first-child,
+  .parent-card > div:first-child > div:first-child {
+    width: 100%;
+  }
+
+  .section-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 0.85rem !important;
+  }
+
+  .kicker-row {
+    gap: 0.4rem;
+    letter-spacing: 0.12em;
+    line-height: 1.25;
+  }
+
+  .kicker-icon {
+    height: 1.9rem;
+    width: 1.9rem;
+    flex: 0 0 1.9rem;
+  }
+
+  .brand-wordmark {
+    font-size: 2.4rem;
+  }
+
+  .field-surface,
+  .setup-choice,
+  .setup-chip,
+  .day-tile,
+  .action-button,
+  select,
+  input,
+  textarea,
+  button {
+    min-height: 2.9rem;
+  }
+
+  .setup-chip {
+    width: 100%;
+    border-radius: 1rem;
+  }
+
+  .stat-chip,
+  .label-chip {
+    white-space: normal;
+  }
+
+  .grid {
+    row-gap: 1rem;
+  }
+}

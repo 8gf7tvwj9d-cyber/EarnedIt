@@ -115,11 +115,11 @@ export function isOptionalInstanceChore(chore: Chore) {
 
 export function getChoreKindLabel(chore: Chore) {
   if (isOptionalChore(chore)) {
-    return "Extra earning chore";
+    return "Repeating chore";
   }
 
   if (isRoutineChore(chore)) {
-    return "Streak chore";
+    return "Required repeating chore";
   }
 
   return "One-time chore";

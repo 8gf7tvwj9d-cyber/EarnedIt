@@ -422,7 +422,15 @@ export function ParentDashboard({
   }
 
   function submitDraft() {
-    if (!draft.title.trim() || (draft.choreKind !== "routine" && !draft.amount) || !draft.childId) {
+    if (!draft.title.trim() || !draft.amount || !draft.childId) {
+      return;
+    }
+
+    if (
+      draft.choreKind === "routine" &&
+      draft.rrcSchedule.cycleType !== "weekly" &&
+      (!getRoutineCalendarStart() || getRoutineRequiredOffsets().length === 0)
+    ) {
       return;
     }
 

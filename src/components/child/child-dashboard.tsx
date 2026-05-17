@@ -231,7 +231,7 @@ export function ChildDashboard({
             </p>
             <p className="mt-4 rounded-2xl border border-white/14 bg-white/10 px-4 py-3 text-sm font-bold text-[#fff7df]">
               {treeProgress.nextStage
-                ? `Keep watering chores to grow toward ${treeProgress.nextStage.label}.`
+                ? `Keep finishing chores to grow toward ${treeProgress.nextStage.label}.`
                 : "Your tree has reached its fullest stage."}
             </p>
 
@@ -268,7 +268,7 @@ export function ChildDashboard({
             </div>
             <h2 className="mt-2 font-mono text-3xl font-black">Keep growing, {currentUser.name}</h2>
             <p className="mt-2 max-w-xl text-sm leading-6 text-slate-200">
-              Complete today&apos;s chores, keep streak routines alive, and earn rewards as you go.
+              Complete today&apos;s chores, keep required repeating chores alive, and earn rewards as you go.
             </p>
           </div>
 
@@ -520,13 +520,13 @@ function ChildChoreCard({
               {isRoutineSaving ? "Saving..." : "Check in"}
             </button>
             <button className={`action-button w-full rounded-2xl px-4 py-4 text-base font-black ${brokenStreak ? "cursor-not-allowed bg-slate-500/80 text-white" : routineProgress?.isEligible ? "hero-button-primary" : "hero-button-secondary text-slate-200"}`} disabled={brokenStreak} onClick={() => onRoutineSubmit(chore)} type="button">
-              {brokenStreak ? "Streak failed" : "Submit routine for approval"}
+              {brokenStreak ? "Streak failed" : "Submit repeating chore for approval"}
             </button>
             {brokenStreak && streakStatus?.missedDate ? <p className="text-center text-xs font-bold uppercase tracking-[0.18em] text-rose-200">Streak broken. Missed {formatDate(streakStatus.missedDate)}. Restarts {streakStatus.nextRestartDate ? formatDate(streakStatus.nextRestartDate) : "next cycle"}.</p> : todayPhotoExists ? <p className="text-center text-xs font-bold uppercase tracking-[0.18em] text-lime-100">Today&apos;s proof is already saved</p> : canCheckInToday ? <p className="text-center text-xs font-bold uppercase tracking-[0.18em] text-slate-300">Take a photo to save today&apos;s check-in</p> : <p className="text-center text-xs font-bold uppercase tracking-[0.18em] text-slate-300">Today is not an active required check-in day</p>}
           </>
         ) : (
           <button className={`action-button w-full rounded-2xl px-4 py-4 text-base font-black ${photoDraft && !isPhotoPreparing ? "bg-gradient-to-r from-[#6f9a52] to-[#d4ad4f] text-slate-950" : "hero-button-secondary text-slate-200"}`} disabled={!photoDraft || isPhotoPreparing} onClick={() => onStandardSubmit(chore)} type="button">
-            {isOptionalChore(chore) ? "Submit optional chore" : "Submit chore"}
+            {isOptionalChore(chore) ? "Submit repeating chore" : "Submit chore"}
           </button>
         )}
       </div>

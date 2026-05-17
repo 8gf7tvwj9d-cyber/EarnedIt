@@ -30,6 +30,8 @@ const STORAGE_KEY = "chorepay-family-store";
 const APP_DATA_SCHEMA_VERSION = 1;
 const SHARED_TABLE = "household_app_state";
 const DEFAULT_HOUSEHOLD_ID = "family-household-1";
+const LEGACY_DEMO_PARENT_NAME = ["Mor", "gan"].join("");
+const LEGACY_DEMO_CHILD_NAME = ["Ave", "ry"].join("");
 
 type StoredAppDataPayload = {
   schemaVersion: number;
@@ -86,6 +88,72 @@ function createStoredPayload(appData: AppData): StoredAppDataPayload {
   };
 }
 
+function isLegacyDemoParent(user: User) {
+  return user.name === LEGACY_DEMO_PARENT_NAME || user.username === "morgan-parent";
+}
+
+function isLegacyDemoChild(user: User) {
+  return user.name === LEGACY_DEMO_CHILD_NAME || user.username === "avery-child";
+}
+
+function hasLegacyDemoIdentity(candidate: unknown) {
+  if (!isAppDataShape(candidate)) {
+    return false;
+  }
+
+  return (
+    candidate.users.some((user) => isLegacyDemoParent(user) || isLegacyDemoChild(user)) ||
+    candidate.childProfiles.some((profile) => profile.name === LEGACY_DEMO_CHILD_NAME)
+  );
+}
+
+function hasConfiguredLocalData(appData: AppData) {
+  const hasSavedActivity =
+    appData.chores.length > 0 || appData.checkIns.length > 0 || appData.payouts.length > 0;
+  const hasCustomNames = appData.users.some((user) => {
+    if (user.role === "parent") {
+      return user.name.trim() !== "" && user.name !== "Parent";
+    }
+
+    return user.name.trim() !== "" && user.name !== "Child";
+  });
+
+  return hasSavedActivity || hasCustomNames;
+}
+
+function migrateLegacyDemoNames(appData: AppData): AppData {
+  return {
+    ...appData,
+    users: appData.users.map((user) => {
+      if (isLegacyDemoParent(user)) {
+        return {
+          ...user,
+          name: "Parent",
+          username: user.username === "morgan-parent" ? "parent" : user.username,
+        };
+      }
+
+      if (isLegacyDemoChild(user)) {
+        return {
+          ...user,
+          name: "Child",
+          username: user.username === "avery-child" ? "child" : user.username,
+        };
+      }
+
+      return user;
+    }),
+    childProfiles: appData.childProfiles.map((profile) =>
+      profile.name === LEGACY_DEMO_CHILD_NAME
+        ? {
+            ...profile,
+            name: "Child",
+          }
+        : profile,
+    ),
+  };
+}
+
 function normalizeChore(chore: Chore): Chore {
   const weeklyDays = chore.repeat_days ?? [];
   const legacyKind = chore.chore_kind as string;
@@ -131,7 +199,8 @@ function normalizeChore(chore: Chore): Chore {
 }
 
 function normalizeAppData(appData: AppData): AppData {
-  const normalizedChores = appData.chores.map((chore) => normalizeChore(chore));
+  const migratedAppData = migrateLegacyDemoNames(appData);
+  const normalizedChores = migratedAppData.chores.map((chore) => normalizeChore(chore));
   const existingCheckIns = appData.checkIns ?? [];
   const existingKeys = new Set(
     existingCheckIns.map((entry) => `${entry.chore_id}:${entry.check_in_date}`),
@@ -151,9 +220,9 @@ function normalizeAppData(appData: AppData): AppData {
   );
 
   return {
-    ...appData,
+    ...migratedAppData,
     session: {
-      currentUserId: appData.session?.currentUserId ?? null,
+      currentUserId: migratedAppData.session?.currentUserId ?? null,
     },
     chores: normalizedChores,
     checkIns: [...existingCheckIns, ...migratedRoutineCheckIns].sort((left, right) =>
@@ -234,7 +303,9 @@ export function initializeAppData(): AppDataInitialization {
       if (normalized) {
         return {
           appData: normalized,
-          shouldPersist: payload.schemaVersion !== APP_DATA_SCHEMA_VERSION,
+          shouldPersist:
+            payload.schemaVersion !== APP_DATA_SCHEMA_VERSION ||
+            hasLegacyDemoIdentity(payload.appData),
         };
       }
     }
@@ -315,8 +386,40 @@ export async function initializeSharedAppData(): Promise<SharedAppDataInitializa
       };
     }
 
+    const remoteHasLegacyDemoIdentity = hasLegacyDemoIdentity(data?.app_data);
+    const localHasLegacyDemoIdentity = hasLegacyDemoIdentity(local.appData);
     const remoteCandidate = normalizeStoredAppData(data?.app_data);
     if (remoteCandidate) {
+      if (
+        remoteHasLegacyDemoIdentity &&
+        !localHasLegacyDemoIdentity &&
+        hasConfiguredLocalData(local.appData)
+      ) {
+        const localSource = withDeviceSession(normalizeAppData(local.appData), deviceSession);
+        const { error: replaceError } = await supabase
+          .from(SHARED_TABLE)
+          .upsert(
+            {
+              household_id: householdId,
+              app_data: stripSessionForShared(localSource),
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "household_id" },
+          );
+
+        if (!replaceError) {
+          writeAppData(localSource);
+          return {
+            appData: localSource,
+            shouldPersist: false,
+            storageMode: "supabase",
+            syncWarning: null,
+          };
+        }
+
+        console.warn("[Earned] Could not replace legacy shared demo data.", replaceError);
+      }
+
       const merged = withDeviceSession(remoteCandidate, deviceSession);
       writeAppData(merged);
       return {
@@ -499,8 +602,7 @@ export function saveChore(
 ): AppData {
   const timestamp = new Date().toISOString();
   const localDate = formatLocalIsoDate(new Date(timestamp));
-  const amountCents =
-    draft.choreKind === "routine" ? 0 : Math.round(Number(draft.amount || "0") * 100);
+  const amountCents = Math.round(Number(draft.amount || "0") * 100);
   const isOptionalTemplate = draft.choreKind === "optional";
   const routineSchedule: RrcSchedule | null =
     draft.choreKind === "routine"

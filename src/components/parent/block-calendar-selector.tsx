@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { formatDate } from "@/lib/format";
 import { ChoreDraft } from "@/types/app";
-import { addDays, addMonths, getTodayKey, parseIsoDate } from "@/components/parent/parent-date-utils";
+import { addDays, getTodayKey, parseIsoDate } from "@/components/parent/parent-date-utils";
 
 export function BlockCalendarSelector({
   cycleType,
@@ -18,30 +18,20 @@ export function BlockCalendarSelector({
   onClear: () => void;
   onSelectDate: (isoDate: string) => void;
 }) {
-  const initialMonth =
-    cycleType === "one_month_block" && startDate ? startDate : startDate || getTodayKey();
-  const [visibleMonth, setVisibleMonth] = useState(() => `${initialMonth.slice(0, 7)}-01`);
-  const monthDate = parseIsoDate(visibleMonth);
-  const monthLabel = monthDate.toLocaleDateString("en-US", {
-    month: "long",
-    year: "numeric",
-  });
-  const firstDay = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
-  const startOffset = firstDay.getDay();
-  const daysInMonth = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate();
-  const leadingDays = Array.from({ length: startOffset }, () => null);
-  const monthDays = Array.from({ length: daysInMonth }, (_, index) =>
-    getTodayKey(new Date(monthDate.getFullYear(), monthDate.getMonth(), index + 1)),
-  );
+  const dateInputRef = useRef<HTMLInputElement | null>(null);
+  const [pendingDate, setPendingDate] = useState("");
   const blockEndDate =
     cycleType === "weekly" || !startDate
       ? null
       : cycleType === "one_month_block"
         ? getTodayKey(new Date(parseIsoDate(startDate).getFullYear(), parseIsoDate(startDate).getMonth() + 1, 0))
         : addDays(startDate, 13);
-  const selectedDates = new Set(
-    startDate ? selectedOffsets.map((offset) => addDays(startDate, offset)) : [],
+  const selectedDates = useMemo(
+    () => (startDate ? selectedOffsets.map((offset) => addDays(startDate, offset)) : []),
+    [selectedOffsets, startDate],
   );
+  const minDate = startDate || undefined;
+  const maxDate = blockEndDate || undefined;
 
   function isEnabledDate(isoDate: string) {
     if (!startDate) {
@@ -59,9 +49,23 @@ export function BlockCalendarSelector({
     return isoDate >= startDate && isoDate <= blockEndDate;
   }
 
+  function openPicker() {
+    dateInputRef.current?.showPicker?.();
+    dateInputRef.current?.focus();
+  }
+
+  function handleDateChange(isoDate: string) {
+    setPendingDate("");
+    if (!isoDate || !isEnabledDate(isoDate)) {
+      return;
+    }
+
+    onSelectDate(isoDate);
+  }
+
   return (
     <div className="rounded-[22px] border border-[#d7c5a3]/35 bg-[#fff8e7]/12 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-      <div className="mb-3 flex items-start justify-between gap-3">
+      <div className="mb-4 flex items-start justify-between gap-3">
         <div>
           <p className="text-lg font-black text-[#fff7df]">
             {cycleType === "one_month_block" ? "Required dates in this month" : "Required dates in this two week block"}
@@ -71,7 +75,7 @@ export function BlockCalendarSelector({
               ? cycleType === "one_month_block"
                 ? `First selected date locked this block to ${formatDate(startDate)} through ${blockEndDate ? formatDate(blockEndDate) : ""}.`
                 : `First selected date anchored this block to ${formatDate(startDate)} through ${blockEndDate ? formatDate(blockEndDate) : ""}.`
-              : "Tap the first date to anchor the block, then pick the other dates that should count."}
+              : "Pick the first required date to anchor the block, then add any other dates that should count."}
           </p>
         </div>
         {startDate ? (
@@ -84,56 +88,49 @@ export function BlockCalendarSelector({
           </button>
         ) : null}
       </div>
-      <div className="mb-3 flex items-center justify-between gap-3">
+
+      <div className="space-y-2">
+        <input
+          ref={dateInputRef}
+          aria-label={startDate ? "Add required block date" : "Pick first required block date"}
+          className="sr-only"
+          max={maxDate}
+          min={minDate}
+          tabIndex={-1}
+          type="date"
+          value={pendingDate}
+          onChange={(event) => handleDateChange(event.target.value)}
+        />
         <button
-          className="hero-button-secondary rounded-full px-3 py-2 text-xs font-black"
-          onClick={() => setVisibleMonth(addMonths(visibleMonth, -1))}
+          className="action-button w-full rounded-2xl bg-gradient-to-r from-[#6f9a52] to-[#d4ad4f] px-5 py-4 text-base font-black text-[#231d16] shadow-lg shadow-[#3d2b12]/14"
+          onClick={openPicker}
           type="button"
         >
-          Prev
-        </button>
-        <p className="text-sm font-black uppercase tracking-[0.16em] text-[#fff7df]">{monthLabel}</p>
-        <button
-          className="hero-button-secondary rounded-full px-3 py-2 text-xs font-black"
-          onClick={() => setVisibleMonth(addMonths(visibleMonth, 1))}
-          type="button"
-        >
-          Next
+          {startDate ? "Add required block day" : "Pick required block day"}
         </button>
       </div>
-      <div className="mb-2 grid grid-cols-7 gap-2 text-center text-xs font-black uppercase tracking-[0.14em] text-[#d8cab1]">
-        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((dayLabel) => (
-          <span key={dayLabel}>{dayLabel}</span>
-        ))}
-      </div>
-      <div className="grid grid-cols-7 gap-2">
-        {leadingDays.map((_, index) => (
-          <span key={`blank-${index}`} className="h-12 rounded-2xl opacity-0" />
-        ))}
-        {monthDays.map((isoDate) => {
-          const selected = selectedDates.has(isoDate);
-          const enabled = isEnabledDate(isoDate);
-          const firstSelected = startDate && isoDate === startDate;
-          return (
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        {selectedDates.length === 0 ? (
+          <p className="rounded-2xl border border-dashed border-[#d7c5a3]/35 px-3 py-3 text-sm font-bold text-[#d8cab1]">
+            No required block dates selected yet.
+          </p>
+        ) : (
+          selectedDates.map((isoDate) => (
             <button
               key={isoDate}
-              className={`rounded-2xl px-2 py-3 text-sm font-black transition ${
-                selected
-                  ? firstSelected
-                    ? "bg-gradient-to-r from-[#d2ab46] to-[#fff0b3] text-[#231d16]"
-                    : "bg-gradient-to-r from-[#7aad55] to-[#d2ab46] text-[#231d16]"
-                  : enabled
-                    ? "bg-white/90 text-[#443722] hover:bg-[#f2e3b9]"
-                    : "bg-white/30 text-[#8a806d] opacity-45"
+              className={`rounded-full px-3 py-2 text-xs font-black ${
+                isoDate === startDate
+                  ? "bg-gradient-to-r from-[#d2ab46] to-[#fff0b3] text-[#231d16]"
+                  : "bg-gradient-to-r from-[#7aad55] to-[#d2ab46] text-[#231d16]"
               }`}
-              disabled={!enabled}
               onClick={() => onSelectDate(isoDate)}
               type="button"
             >
-              {isoDate.slice(-2)}
+              {formatDate(isoDate)}
             </button>
-          );
-        })}
+          ))
+        )}
       </div>
     </div>
   );

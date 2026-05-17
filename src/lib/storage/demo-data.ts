@@ -4,14 +4,14 @@ export const demoData: AppData = {
   users: [
     {
       id: "user-parent-1",
-      name: "Brandon",
-      username: "brandon-parent",
+      name: "Parent",
+      username: "parent",
       role: "parent",
     },
     {
       id: "user-child-1",
-      name: "Cynthia",
-      username: "cynthia-child",
+      name: "Child",
+      username: "child",
       role: "child",
     },
   ],
@@ -19,7 +19,7 @@ export const demoData: AppData = {
     {
       id: "child-1",
       parent_id: "user-parent-1",
-      name: "Cynthia",
+      name: "Child",
       user_id: "user-child-1",
     },
   ],

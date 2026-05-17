@@ -41,8 +41,8 @@ The app will run in demo mode by default with seeded parent and child accounts s
 
 ## Demo accounts
 
-- Parent: `Morgan`
-- Child: `Avery`
+- Parent: `Parent`
+- Child: `Child`
 
 Use the role buttons on the home screen or in the header to switch views.
 

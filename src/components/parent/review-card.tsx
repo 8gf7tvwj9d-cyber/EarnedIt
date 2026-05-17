@@ -118,13 +118,13 @@ export function ReviewCard({
       {isRejecting ? (
         <div className="mt-3 space-y-2">
           <textarea className="field-surface min-h-22 w-full rounded-2xl px-4 py-3 text-sm text-slate-900" placeholder="Optional note to explain what should change" value={rejectionNote} onChange={(event) => onRejectionNoteChange(event.target.value)} />
-          <div className="flex gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row">
             <button className="action-button flex-1 rounded-2xl bg-rose-600 px-4 py-3 font-black text-white" onClick={() => { onReject(chore.id, rejectionNote); onRejectingChange(null); onRejectionNoteChange(""); }} type="button">Confirm reject</button>
             <button className="action-button rounded-2xl border border-white/18 bg-white/10 px-4 py-3 font-black text-white" onClick={() => { onRejectingChange(null); onRejectionNoteChange(""); }} type="button">Cancel</button>
           </div>
         </div>
       ) : (
-        <div className="mt-4 flex gap-2">
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
           <button className={`action-button flex-1 rounded-2xl px-4 py-3 font-black text-white ${!canApprove ? "cursor-not-allowed bg-slate-500/80" : "bg-emerald-600"}`} disabled={!canApprove} onClick={() => onApprove(chore.id)} type="button">{!canApprove ? "Approval locked" : "Approve"}</button>
           <button className="action-button flex-1 rounded-2xl bg-rose-600 px-4 py-3 font-black text-white" onClick={() => onRejectingChange(chore.id)} type="button">Reject</button>
         </div>

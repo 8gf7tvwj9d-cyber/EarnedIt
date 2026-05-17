@@ -144,11 +144,9 @@ function ComposerBasicsSection({
       </InputLabel>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        {draft.choreKind !== "routine" ? (
-          <InputLabel dark label="Reward amount">
-            <input className="field-surface w-full rounded-2xl px-4 py-4 text-base text-[#2f271f]" min="0" placeholder="10.00" step="0.01" type="number" value={draft.amount} onChange={(event) => onSetDraft((current) => ({ ...current, amount: event.target.value }))} />
-          </InputLabel>
-        ) : null}
+        <InputLabel dark label="Reward amount">
+          <input className="field-surface w-full rounded-2xl px-4 py-4 text-base text-[#2f271f]" min="0" placeholder="10.00" step="0.01" type="number" value={draft.amount} onChange={(event) => onSetDraft((current) => ({ ...current, amount: event.target.value }))} />
+        </InputLabel>
         <InputLabel dark label="Assigned child">
           <select className="field-surface w-full rounded-2xl px-4 py-4 text-base text-[#2f271f]" value={draft.childId} onChange={(event) => onSetDraft((current) => ({ ...current, childId: event.target.value }))}>
             {childProfiles.map((child) => (
@@ -158,7 +156,7 @@ function ComposerBasicsSection({
         </InputLabel>
       </div>
 
-      {draft.choreKind === "routine" ? null : (
+      {draft.choreKind === "one_time" ? (
         <div className="grid gap-3 sm:grid-cols-2">
           <InputLabel dark label="Available from">
             <input className="field-surface w-full rounded-2xl px-4 py-4 text-base text-[#2f271f]" type="date" value={draft.startDate} onChange={(event) => onSetDraft((current) => ({ ...current, startDate: event.target.value }))} />
@@ -167,7 +165,7 @@ function ComposerBasicsSection({
             <input className="field-surface w-full rounded-2xl px-4 py-4 text-base text-[#2f271f]" type="date" value={draft.dueDate} onChange={(event) => onSetDraft((current) => ({ ...current, dueDate: event.target.value }))} />
           </InputLabel>
         </div>
-      )}
+      ) : null}
     </FormSection>
   );
 }
@@ -212,14 +210,14 @@ function ComposerScheduleSection({
             onClick={() => onSetDraft((current) => ({ ...current, choreKind: "optional", recurring: true }))}
             type="button"
           >
-            Optional rolling chore
+            Repeating chore
           </button>
           <button
             className={`setup-choice ${draft.choreKind === "routine" ? "setup-choice-selected" : ""}`}
             onClick={() => onSetDraft((current) => ({ ...current, choreKind: "routine", recurring: true }))}
             type="button"
           >
-            Required routine / streak chore
+            Required repeating chore
           </button>
         </div>
       </div>
@@ -229,7 +227,7 @@ function ComposerScheduleSection({
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-base font-black text-[#fff7df]">Availability</p>
-              <p className="mt-1 text-sm leading-6 text-[#d8cab1]">Choose whether this rolls on a weekly rhythm.</p>
+              <p className="mt-1 text-sm leading-6 text-[#d8cab1]">Choose whether this repeats on a weekly rhythm.</p>
             </div>
             <input checked={draft.recurring} className="h-6 w-6 accent-[#4f7f3a]" type="checkbox" onChange={(event) => onSetDraft((current) => ({ ...current, recurring: event.target.checked }))} />
           </div>
@@ -318,12 +316,16 @@ function ComposerRequiredDaysSection({
       helper={
         draft.choreKind === "routine" && draft.rrcSchedule.cycleType !== "weekly"
           ? "Pick the exact calendar dates inside the block that count."
-          : "Pick the days that count. Selected days use the green growth state."
+          : draft.choreKind === "optional"
+            ? "Pick the days this repeating chore is available."
+            : "Pick the required days that count toward the streak."
       }
       title={
         draft.choreKind === "routine" && draft.rrcSchedule.cycleType !== "weekly"
           ? "Required Dates"
-          : "Required Days"
+          : draft.choreKind === "optional"
+            ? "Available Days"
+            : "Required Days"
       }
       variant="standout"
     >

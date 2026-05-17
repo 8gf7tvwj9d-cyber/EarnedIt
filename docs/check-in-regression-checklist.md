@@ -15,12 +15,12 @@ Use this after any change to check-in, routine progress, optional chore resets, 
 - A required routine only becomes submittable for approval when all required days are complete.
 - Rejected routine submissions do not count as approved earnings.
 
-## Optional rolling chore checks
+## Optional repeating chore checks
 
-- An optional rolling chore can be completed once per reset period.
-- Completing an optional rolling chore does not increase required routine progress.
-- Optional rolling chores remain separate from required streak chores in both parent and child views.
-- Optional rolling chores only add to earnings after parent approval.
+- An optional repeating chore can be completed once per reset period.
+- Completing an optional repeating chore does not increase required repeating chore progress.
+- Optional repeating chores remain separate from required streak chores in both parent and child views.
+- Optional repeating chores only add to earnings after parent approval.
 
 ## Earnings and payout checks
 
