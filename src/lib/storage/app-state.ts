@@ -133,9 +133,10 @@ function hasLegacyDemoData(candidate: unknown) {
 }
 
 function hasConfiguredLocalData(appData: AppData) {
+  const cleaned = stripLegacyDemoActivity(appData);
   const hasSavedActivity =
-    appData.chores.length > 0 || appData.checkIns.length > 0 || appData.payouts.length > 0;
-  const hasCustomNames = appData.users.some((user) => {
+    cleaned.chores.length > 0 || cleaned.checkIns.length > 0 || cleaned.payouts.length > 0;
+  const hasCustomNames = cleaned.users.some((user) => {
     if (user.role === "parent") {
       return user.name.trim() !== "" && user.name !== "Parent";
     }
@@ -144,6 +145,32 @@ function hasConfiguredLocalData(appData: AppData) {
   });
 
   return hasSavedActivity || hasCustomNames;
+}
+
+function stripLegacyDemoActivity(appData: AppData): AppData {
+  const legacyChoreIds = new Set(
+    appData.chores
+      .filter(
+        (chore) =>
+          LEGACY_DEMO_CHORE_IDS.has(chore.id) || LEGACY_DEMO_CHORE_TITLES.has(chore.title),
+      )
+      .map((chore) => chore.id),
+  );
+
+  if (legacyChoreIds.size === 0 && !appData.payouts.some((payout) => LEGACY_DEMO_PAYOUT_IDS.has(payout.id))) {
+    return appData;
+  }
+
+  return {
+    ...appData,
+    chores: appData.chores.filter(
+      (chore) =>
+        !legacyChoreIds.has(chore.id) &&
+        (!chore.template_chore_id || !legacyChoreIds.has(chore.template_chore_id)),
+    ),
+    checkIns: appData.checkIns.filter((entry) => !legacyChoreIds.has(entry.chore_id)),
+    payouts: appData.payouts.filter((payout) => !LEGACY_DEMO_PAYOUT_IDS.has(payout.id)),
+  };
 }
 
 function migrateLegacyDemoNames(appData: AppData): AppData {
@@ -224,7 +251,7 @@ function normalizeChore(chore: Chore): Chore {
 }
 
 function normalizeAppData(appData: AppData): AppData {
-  const migratedAppData = migrateLegacyDemoNames(appData);
+  const migratedAppData = stripLegacyDemoActivity(migrateLegacyDemoNames(appData));
   const normalizedChores = migratedAppData.chores.map((chore) => normalizeChore(chore));
   const existingCheckIns = appData.checkIns ?? [];
   const existingKeys = new Set(
@@ -332,7 +359,9 @@ export function initializeAppData(): AppDataInitialization {
       if (normalized) {
         if (hasLegacyDemoData(payload.appData)) {
           return {
-            appData: getCleanStarterData(getDeviceSession(normalized)),
+            appData: hasConfiguredLocalData(normalized)
+              ? normalized
+              : getCleanStarterData(getDeviceSession(normalized)),
             shouldPersist: true,
           };
         }
@@ -348,7 +377,9 @@ export function initializeAppData(): AppDataInitialization {
     if (normalizedLegacy) {
       if (hasLegacyDemoData(parsed)) {
         return {
-          appData: getCleanStarterData(getDeviceSession(normalizedLegacy)),
+          appData: hasConfiguredLocalData(normalizedLegacy)
+            ? normalizedLegacy
+            : getCleanStarterData(getDeviceSession(normalizedLegacy)),
           shouldPersist: true,
         };
       }
@@ -463,7 +494,7 @@ export async function initializeSharedAppData(): Promise<SharedAppDataInitializa
 
       if (remoteHasLegacyDemoData) {
         const cleanSource = hasConfiguredLocalData(local.appData)
-          ? withDeviceSession(normalizeAppData(local.appData), deviceSession)
+          ? withDeviceSession(normalizeAppData(stripLegacyDemoActivity(local.appData)), deviceSession)
           : getCleanStarterData(deviceSession);
         const { error: cleanError } = await supabase
           .from(SHARED_TABLE)
@@ -500,7 +531,9 @@ export async function initializeSharedAppData(): Promise<SharedAppDataInitializa
     }
 
     const seeded = hasLegacyDemoData(local.appData)
-      ? getCleanStarterData(deviceSession)
+      ? hasConfiguredLocalData(local.appData)
+        ? withDeviceSession(normalizeAppData(local.appData), deviceSession)
+        : getCleanStarterData(deviceSession)
       : withDeviceSession(normalizeAppData(local.appData), deviceSession);
     const { error: seedError } = await supabase
       .from(SHARED_TABLE)
@@ -619,7 +652,7 @@ export async function pullSharedAppDataSnapshot(
     }
 
     const merged = remoteHasLegacyDemoData
-      ? hasConfiguredLocalData(localAppData) && !hasLegacyDemoData(localAppData)
+      ? hasConfiguredLocalData(localAppData)
         ? withDeviceSession(normalizeAppData(localAppData), getDeviceSession(localAppData))
         : getCleanStarterData(getDeviceSession(localAppData))
       : withDeviceSession(normalized, getDeviceSession(localAppData));
