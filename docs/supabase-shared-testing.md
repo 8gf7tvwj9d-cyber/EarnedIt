@@ -33,10 +33,12 @@ create table if not exists public.household_app_state (
 alter table public.household_app_state enable row level security;
 
 drop policy if exists "anon household read/write family" on public.household_app_state;
-create policy "anon household read/write family"
+drop policy if exists "public household read/write family" on public.household_app_state;
+
+create policy "public household read/write family"
 on public.household_app_state
 for all
-to anon
+to public
 using (household_id = 'family-household-1')
 with check (household_id = 'family-household-1');
 ```
