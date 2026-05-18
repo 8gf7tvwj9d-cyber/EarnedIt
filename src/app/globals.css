@@ -182,6 +182,12 @@ button:active {
   animation: tree-gain 520ms ease-out;
 }
 
+.growth-tree-card-celebrate {
+  animation:
+    tree-gain 520ms ease-out,
+    tree-celebrate 760ms ease-out;
+}
+
 .growth-tree-card-compact {
   min-height: 232px;
 }
@@ -194,6 +200,88 @@ button:active {
   opacity: 1;
   visibility: visible;
   filter: drop-shadow(0 14px 22px rgba(72, 72, 31, 0.18));
+}
+
+.growth-progress-panel {
+  width: min(100%, 320px);
+  border-radius: 1.25rem;
+  border: 1px solid rgba(118, 151, 82, 0.32);
+  background: rgba(255, 255, 255, 0.76);
+  padding: 0.75rem 0.85rem;
+  color: #3d311e;
+  font-size: 0.76rem;
+  font-weight: 800;
+  line-height: 1.35;
+  box-shadow:
+    0 14px 28px rgba(48, 35, 18, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+.growth-progress-track {
+  height: 0.72rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(95, 143, 67, 0.16);
+  box-shadow: inset 0 1px 3px rgba(48, 35, 18, 0.16);
+}
+
+.growth-progress-fill {
+  height: 100%;
+  min-width: 0.7rem;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #5f8f43, #d8aa3d);
+  box-shadow: 0 0 16px rgba(216, 170, 61, 0.34);
+  transition: width 420ms ease;
+}
+
+.tree-grew-badge {
+  position: absolute;
+  top: 0.9rem;
+  right: 0.9rem;
+  z-index: 2;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  background: linear-gradient(135deg, #fff2a5, #9dcc5b);
+  color: #2f3d1a;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  box-shadow: 0 14px 28px rgba(48, 35, 18, 0.14);
+  animation: grew-badge-pop 760ms ease-out;
+}
+
+.growth-sparkle {
+  position: absolute;
+  width: 0.52rem;
+  height: 0.52rem;
+  border-radius: 999px;
+  background: #ffd966;
+  box-shadow: 0 0 18px rgba(255, 217, 102, 0.82);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.growth-tree-card-celebrate .growth-sparkle {
+  animation: sparkle-burst 760ms ease-out;
+}
+
+.growth-sparkle-one {
+  top: 23%;
+  left: 24%;
+}
+
+.growth-sparkle-two {
+  top: 17%;
+  right: 29%;
+  animation-delay: 80ms;
+}
+
+.growth-sparkle-three {
+  top: 42%;
+  right: 20%;
+  animation-delay: 140ms;
 }
 
 .growth-tree-fallback {
@@ -817,6 +905,55 @@ button:active {
   }
 }
 
+@keyframes tree-celebrate {
+  0% {
+    box-shadow:
+      0 22px 46px rgba(48, 35, 18, 0.14),
+      0 0 0 rgba(216, 170, 61, 0);
+  }
+  45% {
+    box-shadow:
+      0 26px 54px rgba(48, 35, 18, 0.16),
+      0 0 32px rgba(216, 170, 61, 0.36);
+  }
+  100% {
+    box-shadow:
+      0 22px 46px rgba(48, 35, 18, 0.14),
+      0 0 0 rgba(216, 170, 61, 0);
+  }
+}
+
+@keyframes grew-badge-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.86);
+  }
+  20%,
+  72% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.96);
+  }
+}
+
+@keyframes sparkle-burst {
+  0% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  25% {
+    opacity: 1;
+    transform: scale(1.25);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-16px) scale(0.75);
+  }
+}
+
 @keyframes leaf-sway {
   0%,
   100% {
@@ -836,6 +973,9 @@ button:active {
   .progress-fill,
   .soft-progress-fill,
   .growth-tree-card,
+  .growth-progress-fill,
+  .growth-sparkle,
+  .tree-grew-badge,
   .tree-leaf,
   .success-pulse {
     transition: none;

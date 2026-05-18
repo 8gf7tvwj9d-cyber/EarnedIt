@@ -60,6 +60,7 @@ export function ChildDashboard({
   onSubmitRollingChore,
 }: ChildDashboardProps) {
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const previousTreeXpRef = useRef<number | null>(null);
   const [photoDrafts, setPhotoDrafts] = useState<Record<string, string | null>>({});
   const [messages, setMessages] = useState<Record<string, string | null>>({});
   const [photoPreparing, setPhotoPreparing] = useState<Record<string, boolean>>({});
@@ -77,6 +78,7 @@ export function ChildDashboard({
       return getDefaultChildSections();
     }
   });
+  const [isTreeCelebrating, setIsTreeCelebrating] = useState(false);
   const [lightboxImage, setLightboxImage] = useState<{ alt: string; src: string } | null>(null);
 
   const availableChores = chores.filter((chore) => {
@@ -137,6 +139,19 @@ export function ChildDashboard({
       JSON.stringify(openSections),
     );
   }, [openSections]);
+
+  useEffect(() => {
+    const previousTreeXp = previousTreeXpRef.current;
+    previousTreeXpRef.current = treeProgress.totalXp;
+
+    if (previousTreeXp === null || treeProgress.totalXp <= previousTreeXp) {
+      return;
+    }
+
+    setIsTreeCelebrating(true);
+    const timer = window.setTimeout(() => setIsTreeCelebrating(false), 1400);
+    return () => window.clearTimeout(timer);
+  }, [treeProgress.totalXp]);
 
   function setSectionOpen(sectionId: string, isOpen: boolean) {
     setOpenSections((current) => ({
@@ -249,7 +264,7 @@ export function ChildDashboard({
     <div className="space-y-6">
       <section className="tree-progress-panel rounded-[32px] p-5 text-white sm:p-6">
         <div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
-          <GrowthTreeCard progress={treeProgress} />
+          <GrowthTreeCard isCelebrating={isTreeCelebrating} progress={treeProgress} />
 
           <div>
             <div className="section-kicker kicker-row">
@@ -264,7 +279,7 @@ export function ChildDashboard({
             </p>
             <p className="mt-4 rounded-2xl border border-white/14 bg-white/10 px-4 py-3 text-sm font-bold text-[#fff7df]">
               {treeProgress.nextStage
-                ? `Keep finishing chores to grow toward ${treeProgress.nextStage.label}.`
+                ? `${treeProgress.completedChoreCount} completed chore${treeProgress.completedChoreCount === 1 ? "" : "s"} counted. ${treeProgress.progressPercent}% toward ${treeProgress.nextStage.label}.`
                 : "Your tree has reached its fullest stage."}
             </p>
 

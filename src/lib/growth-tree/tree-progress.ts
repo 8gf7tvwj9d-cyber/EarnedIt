@@ -10,6 +10,10 @@ function getProofCount(chore: Chore, checkIns: CheckIn[]) {
   return Math.max(checkInCount, chore.proof_entries?.length ?? 0);
 }
 
+function isCompletedForGrowth(chore: Chore) {
+  return chore.status === "approved" || chore.status === "paid";
+}
+
 export function getTreeProgress(chores: Chore[], checkIns: CheckIn[]): TreeProgress {
   try {
     const safeChores = Array.isArray(chores) ? chores : [];
@@ -20,24 +24,38 @@ export function getTreeProgress(chores: Chore[], checkIns: CheckIn[]): TreeProgr
 
     let requiredXp = 0;
     let missedRequiredCount = 0;
+    let completedChoreCount = 0;
 
     requiredChores.forEach((chore) => {
       const progress = getRequiredProgress(chore, safeCheckIns);
-      requiredXp += progress.completedDates.length * 18;
+      const isCompleted = isCompletedForGrowth(chore);
+      requiredXp += progress.completedDates.length * 12;
       if (progress.isEligible) {
-        requiredXp += 14;
+        requiredXp += 10;
+      }
+      if (isCompleted) {
+        completedChoreCount += 1;
+        requiredXp += 26;
       }
       missedRequiredCount += progress.missedDates.length;
     });
 
     const optionalXp = optionalChores.reduce(
-      (sum, chore) => sum + getProofCount(chore, safeCheckIns) * 7,
+      (sum, chore) => {
+        const completed = isCompletedForGrowth(chore);
+        if (completed) {
+          completedChoreCount += 1;
+        }
+
+        return sum + getProofCount(chore, safeCheckIns) * 5 + (completed ? 18 : 0);
+      },
       0,
     );
 
     const oneTimeXp = oneTimeChores.reduce((sum, chore) => {
-      if (chore.status === "approved" || chore.status === "paid") {
-        return sum + 10;
+      if (isCompletedForGrowth(chore)) {
+        completedChoreCount += 1;
+        return sum + 24;
       }
 
       if (chore.status === "submitted") {
@@ -66,6 +84,10 @@ export function getTreeProgress(chores: Chore[], checkIns: CheckIn[]): TreeProgr
       nextStage && stageRange > 0
         ? Math.min(100, Math.max(0, Math.round((currentStageXp / stageRange) * 100)))
         : 100;
+    const choresTowardNextStage = Math.max(
+      0,
+      Math.ceil((stageRange - currentStageXp) / 24),
+    );
 
     return {
       stage,
@@ -74,7 +96,10 @@ export function getTreeProgress(chores: Chore[], checkIns: CheckIn[]): TreeProgr
       currentStageXp,
       nextStage,
       nextStageXp,
+      stageRangeXp: stageRange,
       progressPercent,
+      completedChoreCount,
+      choresTowardNextStage,
       requiredXp: Number.isFinite(requiredXp) ? Math.max(0, requiredXp) : 0,
       optionalXp: Number.isFinite(optionalXp + oneTimeXp)
         ? Math.max(0, optionalXp + oneTimeXp)

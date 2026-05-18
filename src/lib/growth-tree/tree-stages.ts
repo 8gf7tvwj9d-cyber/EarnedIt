@@ -13,7 +13,10 @@ export type TreeProgress = {
   currentStageXp: number;
   nextStage: TreeStage | null;
   nextStageXp: number | null;
+  stageRangeXp: number;
   progressPercent: number;
+  completedChoreCount: number;
+  choresTowardNextStage: number;
   requiredXp: number;
   optionalXp: number;
   bonusXp: number;
@@ -23,10 +26,10 @@ export type TreeProgress = {
 
 export const treeStages: TreeStage[] = [
   { id: "seedling", label: "Seedling", minXp: 0 },
-  { id: "sapling", label: "Sapling", minXp: 60 },
-  { id: "young_tree", label: "Young tree", minXp: 150 },
-  { id: "mature_tree", label: "Mature tree", minXp: 280 },
-  { id: "large_tree", label: "Large tree", minXp: 450 },
+  { id: "sapling", label: "Sapling", minXp: 25 },
+  { id: "young_tree", label: "Young tree", minXp: 65 },
+  { id: "mature_tree", label: "Mature tree", minXp: 125 },
+  { id: "large_tree", label: "Large tree", minXp: 210 },
 ];
 
 export const defaultTreeProgress: TreeProgress = {
@@ -36,7 +39,10 @@ export const defaultTreeProgress: TreeProgress = {
   currentStageXp: 0,
   nextStage: treeStages[1],
   nextStageXp: treeStages[1].minXp,
+  stageRangeXp: treeStages[1].minXp,
   progressPercent: 0,
+  completedChoreCount: 0,
+  choresTowardNextStage: 0,
   requiredXp: 0,
   optionalXp: 0,
   bonusXp: 0,
