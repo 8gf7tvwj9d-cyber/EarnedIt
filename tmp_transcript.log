@@ -1,0 +1,24 @@
+﻿**********************
+Windows PowerShell transcript start
+Start time: 20260513224354
+Username: BRANDONSCOMP\blief
+RunAs User: BRANDONSCOMP\blief
+Configuration Name: 
+Machine: BRANDONSCOMP (Microsoft Windows NT 10.0.26200.0)
+Host Application: C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe -Command [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
+$log='C:\Users\blief\Desktop\chore app\chorepay\tmp_transcript.log'; Remove-Item -LiteralPath $log -Force -ErrorAction SilentlyContinue; Start-Transcript -Path $log -Force | Out-Null; & 'C:\Program Files\nodejs\npm.cmd' run build; $code=$LASTEXITCODE; Stop-Transcript | Out-Null; Write-Output "exit=$code"; Get-Content -LiteralPath $log -Tail 40
+Process ID: 12740
+PSVersion: 5.1.26100.8457
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.26100.8457
+BuildVersion: 10.0.26100.8457
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+
+**********************
+Windows PowerShell transcript end
+End time: 20260513224359
+**********************

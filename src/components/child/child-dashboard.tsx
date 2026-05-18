@@ -1,7 +1,7 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { GrowthTreeCard } from "@/components/growth-tree/growth-tree-card";
 import { ImageLightbox } from "@/components/image-lightbox";
@@ -39,6 +39,16 @@ type ChildDashboardProps = {
   onSubmitRollingChore: (choreId: string) => void;
 };
 
+function getDefaultChildSections() {
+  return {
+    available: true,
+    pendingReview: true,
+    approvedAwaitingPayment: true,
+    paid: false,
+    paymentHistory: false,
+  };
+}
+
 export function ChildDashboard({
   currentUser,
   childProfile,
@@ -54,8 +64,19 @@ export function ChildDashboard({
   const [messages, setMessages] = useState<Record<string, string | null>>({});
   const [photoPreparing, setPhotoPreparing] = useState<Record<string, boolean>>({});
   const [routineSaving, setRoutineSaving] = useState<Record<string, boolean>>({});
-  const [isPaidHistoryOpen, setIsPaidHistoryOpen] = useState(false);
   const [paidHistorySortOrder, setPaidHistorySortOrder] = useState<"newest" | "oldest">("newest");
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => {
+    if (typeof window === "undefined") {
+      return getDefaultChildSections();
+    }
+
+    try {
+      const saved = window.sessionStorage.getItem("earned-child-dashboard-sections");
+      return saved ? { ...getDefaultChildSections(), ...JSON.parse(saved) } : getDefaultChildSections();
+    } catch {
+      return getDefaultChildSections();
+    }
+  });
   const [lightboxImage, setLightboxImage] = useState<{ alt: string; src: string } | null>(null);
 
   const availableChores = chores.filter((chore) => {
@@ -82,21 +103,19 @@ export function ChildDashboard({
 
     return getComputedStatus(chore, checkIns) === "submitted";
   });
-  const approvedEarned = chores.filter((chore) => {
+  const approvedUnpaidChores = chores.filter((chore) => {
     if (isOptionalTemplateChore(chore)) {
       return false;
     }
 
-    const status = getComputedStatus(chore, checkIns);
-    return status === "approved" || status === "paid";
+    return getComputedStatus(chore, checkIns) === "approved";
   });
+  const paidChores = chores.filter(
+    (chore) => !isOptionalTemplateChore(chore) && getComputedStatus(chore, checkIns) === "paid",
+  );
 
   const pendingApproval = awaitingApproval.reduce((sum, chore) => sum + chore.amount_cents, 0);
-  const approvedUnpaid = chores
-    .filter(
-      (chore) => !isOptionalTemplateChore(chore) && getComputedStatus(chore, checkIns) === "approved",
-    )
-    .reduce((sum, chore) => sum + chore.amount_cents, 0);
+  const approvedUnpaid = approvedUnpaidChores.reduce((sum, chore) => sum + chore.amount_cents, 0);
   const paidTotal = payouts.reduce((sum, payout) => sum + payout.amount_cents, 0);
   let treeProgress = defaultTreeProgress;
   let treeLoadFailed = false;
@@ -111,6 +130,20 @@ export function ChildDashboard({
       ? right.paid_at.localeCompare(left.paid_at)
       : left.paid_at.localeCompare(right.paid_at),
   );
+
+  useEffect(() => {
+    window.sessionStorage.setItem(
+      "earned-child-dashboard-sections",
+      JSON.stringify(openSections),
+    );
+  }, [openSections]);
+
+  function setSectionOpen(sectionId: string, isOpen: boolean) {
+    setOpenSections((current) => ({
+      ...current,
+      [sectionId]: isOpen,
+    }));
+  }
 
   function setMessage(choreId: string, message: string | null) {
     setMessages((current) => ({ ...current, [choreId]: message }));
@@ -273,7 +306,14 @@ export function ChildDashboard({
           </div>
 
           <div className="space-y-5">
-            <ChildSection emptyCopy="No available chores right now." icon="leaf" title="Available Chores">
+            <ChildDashboardSection
+              count={`${availableChores.length} active`}
+              icon="leaf"
+              isOpen={openSections.available}
+              title="Available Chores"
+              onOpenChange={(next) => setSectionOpen("available", next)}
+            >
+              <ChildSectionContent emptyCopy="No available chores right now.">
               {availableChores.map((chore) => (
                 <ChildChoreCard
                   key={chore.id}
@@ -293,45 +333,73 @@ export function ChildDashboard({
                   isRoutineSaving={routineSaving[chore.id] ?? false}
                 />
               ))}
-            </ChildSection>
+              </ChildSectionContent>
+            </ChildDashboardSection>
 
-            <ChildSection emptyCopy="No chores are pending review." icon="clock" title="Pending Review">
+            <ChildDashboardSection
+              count={`${awaitingApproval.length} submitted`}
+              icon="clock"
+              isOpen={openSections.pendingReview}
+              title="Pending Review"
+              onOpenChange={(next) => setSectionOpen("pendingReview", next)}
+            >
+              <ChildSectionContent emptyCopy="No chores are pending review.">
               {awaitingApproval.map((chore) => (
                 <ReadOnlyChoreCard key={chore.id} checkIns={checkIns} chore={chore} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} subtitle="Waiting on parent review" />
               ))}
-            </ChildSection>
+              </ChildSectionContent>
+            </ChildDashboardSection>
 
-            <ChildSection emptyCopy="No approved or paid chores yet." icon="sprout" title="Approved / Paid">
-              {approvedEarned.map((chore) => (
+            <ChildDashboardSection
+              count={formatCurrency(approvedUnpaid)}
+              icon="wallet"
+              isOpen={openSections.approvedAwaitingPayment}
+              title="Approved / Awaiting Payment"
+              onOpenChange={(next) => setSectionOpen("approvedAwaitingPayment", next)}
+            >
+              <ChildSectionContent emptyCopy="No approved rewards are waiting for payment.">
+              {approvedUnpaidChores.map((chore) => (
                 <ReadOnlyChoreCard
                   key={chore.id}
                   checkIns={checkIns}
                   chore={chore}
                   onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })}
-                  subtitle={getComputedStatus(chore, checkIns) === "paid" ? "Paid" : "Approved and awaiting payment"}
+                  subtitle="Approved and awaiting payment"
                 />
               ))}
-            </ChildSection>
+              </ChildSectionContent>
+            </ChildDashboardSection>
+
+            <ChildDashboardSection
+              count={`${paidChores.length} paid`}
+              icon="trophy"
+              isOpen={openSections.paid}
+              title="Paid"
+              onOpenChange={(next) => setSectionOpen("paid", next)}
+            >
+              <ChildSectionContent emptyCopy="No paid chores yet.">
+              {paidChores.map((chore) => (
+                <ReadOnlyChoreCard
+                  key={chore.id}
+                  checkIns={checkIns}
+                  chore={chore}
+                  onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })}
+                  subtitle="Paid"
+                />
+              ))}
+              </ChildSectionContent>
+            </ChildDashboardSection>
           </div>
         </div>
 
         <div className="space-y-4">
-          <div className="section-shell rounded-[30px] p-5 sm:p-6">
-            <div className="kicker-row text-slate-500"><span className="kicker-icon"><AppIcon className="h-4 w-4" name="seed" /></span>Payment history</div>
-            <h3 className="mt-2 font-mono text-2xl font-black text-slate-900">Paid rewards for {childProfile.name}</h3>
-          </div>
-
-          <div className="section-shell rounded-[30px] p-5 sm:p-6">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div className="kicker-row text-slate-500"><span className="kicker-icon"><AppIcon className="h-4 w-4" name="seed" /></span>Payments</div>
-              <div className="flex items-center gap-2">
-                <span className="stat-chip stat-chip-soft">{payouts.length} payments</span>
-                <button className="hero-button-secondary rounded-full px-3 py-2 text-xs font-black" onClick={() => setIsPaidHistoryOpen((current) => !current)} type="button">
-                  {isPaidHistoryOpen ? "Hide" : "Show"}
-                </button>
-              </div>
-            </div>
-            {isPaidHistoryOpen ? (
+          <ChildDashboardSection
+            count={`${payouts.length} payments`}
+            icon="seed"
+            isOpen={openSections.paymentHistory}
+            title={`Payment History for ${childProfile.name}`}
+            onOpenChange={(next) => setSectionOpen("paymentHistory", next)}
+          >
             <>
             <div className="mb-4 flex justify-end">
               <select className="field-surface rounded-full px-3 py-2 text-xs font-black text-slate-900" value={paidHistorySortOrder} onChange={(event) => setPaidHistorySortOrder(event.target.value as "newest" | "oldest")}>
@@ -360,10 +428,7 @@ export function ChildDashboard({
               )}
             </div>
             </>
-            ) : (
-              <EmptyState copy="Payment history is tucked away until you want to review it." />
-            )}
-          </div>
+          </ChildDashboardSection>
         </div>
       </section>
       {lightboxImage ? (
@@ -431,7 +496,7 @@ function ChildChoreCard({
             <div className="mt-2 flex flex-wrap gap-2">
               <span className="label-chip label-chip-light">{getChoreKindLabel(chore)}</span>
               {isOptionalChore(chore) ? <span className="label-chip label-chip-light">Optional</span> : null}
-              {isRoutineChore(chore) ? <span className="label-chip label-chip-light">{brokenStreak ? "Streak broken" : "Required today"}</span> : null}
+              {isRoutineChore(chore) ? <span className="label-chip label-chip-light"><AppIcon className="h-3 w-3" name="repeat" /> {brokenStreak ? "Streak broken" : "Repeating"}</span> : null}
             </div>
           </div>
         </div>
@@ -610,27 +675,56 @@ function ReadOnlyChoreCard({
   );
 }
 
-function ChildSection({
-  title,
+function ChildDashboardSection({
+  children,
+  count,
   icon,
+  isOpen,
+  title,
+  onOpenChange,
+}: {
+  children: ReactNode;
+  count: string;
+  icon: "clock" | "leaf" | "seed" | "sprout" | "trophy" | "wallet";
+  isOpen: boolean;
+  title: string;
+  onOpenChange: (next: boolean) => void;
+}) {
+  return (
+    <section className="dashboard-section-shell rounded-[32px]">
+      <button
+        aria-expanded={isOpen}
+        className="dashboard-section-header w-full rounded-[28px] px-4 py-4 text-left sm:px-5"
+        onClick={() => onOpenChange(!isOpen)}
+        type="button"
+      >
+        <span className="flex items-center justify-between gap-3">
+          <span className="flex min-w-0 items-center gap-3">
+            <span className="kicker-icon shrink-0"><AppIcon className="h-4 w-4" name={icon} /></span>
+            <span className="min-w-0">
+              <span className="block font-mono text-xl font-black text-slate-950 sm:text-2xl">{title}</span>
+              <span className="mt-1 block text-xs font-black uppercase tracking-[0.16em] text-[#6d5a2d]">{count}</span>
+            </span>
+          </span>
+          <span className={`section-chevron ${isOpen ? "section-chevron-open" : ""}`} aria-hidden="true">v</span>
+        </span>
+      </button>
+      <div className={`accordion-panel ${isOpen ? "accordion-panel-open" : ""}`}>
+        <div className="accordion-panel-inner px-3 pb-4 pt-2 sm:px-4">{children}</div>
+      </div>
+    </section>
+  );
+}
+
+function ChildSectionContent({
   emptyCopy,
   children,
 }: {
-  title: string;
-  icon: "spark" | "clock" | "trophy" | "leaf" | "sprout" | "seed";
   emptyCopy: string;
   children: ReactNode;
 }) {
   const items = Array.isArray(children) ? children.filter(Boolean) : [children];
-  return (
-    <section>
-      <div className="section-head mb-3 flex items-center justify-between rounded-[22px] px-4 py-3">
-        <div className="kicker-row text-white"><span className="kicker-icon"><AppIcon className="h-4 w-4" name={icon} /></span>{title}</div>
-        <span className="stat-chip stat-chip-dark">{items.length}</span>
-      </div>
-      <div className="space-y-3">{items.length === 0 ? <EmptyState copy={emptyCopy} /> : children}</div>
-    </section>
-  );
+  return <div className="space-y-3">{items.length === 0 ? <EmptyState copy={emptyCopy} /> : children}</div>;
 }
 
 function SummaryCard({
@@ -656,5 +750,5 @@ function SummaryCard({
 }
 
 function EmptyState({ copy }: { copy: string }) {
-  return <div className="rounded-[22px] border border-dashed border-white/20 bg-white/10 px-4 py-6 text-sm text-slate-200">{copy}</div>;
+  return <div className="rounded-[22px] border border-dashed border-slate-200 bg-white/70 px-4 py-6 text-sm text-slate-500">{copy}</div>;
 }
