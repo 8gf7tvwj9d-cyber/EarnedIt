@@ -122,6 +122,12 @@ export type Payout = {
   notes: string | null;
 };
 
+export type PaymentLineItem = {
+  choreId: string;
+  amountCents: number;
+  statusLabel: string;
+};
+
 export type AppSession = {
   currentUserId: string | null;
 };

@@ -2,8 +2,8 @@ import { ChoreStatus } from "@/types/app";
 
 const statusStyles: Record<ChoreStatus, string> = {
   available: "bg-white/88 text-[#5f5747] ring-[#d8c8a9] shadow-[0_12px_24px_rgba(48,35,18,0.06)]",
-  submitted: "bg-amber-50/96 text-amber-800 ring-amber-200 shadow-[0_12px_24px_rgba(250,180,45,0.12)]",
-  approved: "bg-[#edf6df]/96 text-[#3f6f2f] ring-[#a7c279] shadow-[0_12px_24px_rgba(95,143,67,0.14)]",
+  submitted: "bg-amber-100/98 text-amber-900 ring-amber-300 shadow-[0_12px_24px_rgba(250,180,45,0.16)]",
+  approved: "bg-[#dff1ce]/98 text-[#285d20] ring-[#84ad57] shadow-[0_12px_24px_rgba(95,143,67,0.18)]",
   rejected: "bg-rose-50/96 text-rose-800 ring-rose-200 shadow-[0_12px_24px_rgba(227,85,111,0.12)]",
   paid: "bg-[#fff8e6]/96 text-[#6b522c] ring-[#d9c075] shadow-[0_12px_24px_rgba(48,35,18,0.12)]",
   expired: "bg-[#efe3d1]/96 text-[#7a4d2f] ring-[#c9aa7a] shadow-[0_12px_24px_rgba(126,91,42,0.12)]",
@@ -44,7 +44,7 @@ export function StatusBadge({
 
   return (
     <span
-      className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-extrabold uppercase tracking-[0.22em] ring-1 backdrop-blur-sm ${resolvedTone}`}
+      className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.2em] ring-1 backdrop-blur-sm ${resolvedTone}`}
     >
       <span
         className="inline-block h-2 w-2 shrink-0 rounded-full shadow-[0_0_10px_rgba(255,255,255,0.22)]"

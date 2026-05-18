@@ -24,6 +24,7 @@ export function ChoreGroup({
   checkIns,
   chores,
   childProfiles,
+  isEmbedded,
   isCollapsible,
   isOpen = true,
   onEdit,
@@ -37,6 +38,7 @@ export function ChoreGroup({
   checkIns: CheckIn[];
   chores: Chore[];
   childProfiles: ChildProfile[];
+  isEmbedded?: boolean;
   isCollapsible?: boolean;
   isOpen?: boolean;
   onEdit: (chore: Chore) => void;
@@ -46,8 +48,8 @@ export function ChoreGroup({
   sortControl?: ReactNode;
 }) {
   return (
-    <div className="section-shell rounded-[32px] p-5 sm:p-6">
-      <div className="mb-4 flex items-center justify-between">
+    <div className={isEmbedded ? "" : "section-shell rounded-[32px] p-5 sm:p-6"}>
+      <div className={isEmbedded ? "sr-only" : "mb-4 flex items-center justify-between"}>
         <div>
           <div className="kicker-row text-slate-600"><span className="kicker-icon"><AppIcon className="h-4 w-4" name="spark" /></span>{title}</div>
           <div className="title-underline mt-2" />
@@ -89,7 +91,7 @@ export function ChoreGroup({
                     <div className="mt-2 flex flex-wrap gap-2">
                       <span className="label-chip label-chip-soft">{getChoreKindLabel(chore)}</span>
                       {isOptionalChore(chore) ? <span className="label-chip label-chip-soft">{optionalState?.helperLabel}</span> : null}
-                      {isRoutineChore(chore) ? <span className="label-chip label-chip-soft">{brokenStreak ? "Streak broken" : routineProgress?.streakLabel}</span> : null}
+                      {isRoutineChore(chore) ? <span className="label-chip label-chip-soft"><AppIcon className="h-3 w-3" name="repeat" /> {brokenStreak ? "Streak broken" : routineProgress?.streakLabel ?? "Repeating"}</span> : null}
                     </div>
                   </div>
                 </div>

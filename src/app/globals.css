@@ -286,6 +286,73 @@ button:active {
     inset 0 1px 0 rgba(255, 255, 255, 0.94);
 }
 
+.dashboard-section-shell {
+  border: 1px solid rgba(183, 158, 103, 0.5);
+  background:
+    linear-gradient(180deg, rgba(255, 253, 246, 0.9), rgba(246, 237, 215, 0.84)),
+    radial-gradient(circle at top right, rgba(95, 143, 67, 0.1), transparent 30%);
+  box-shadow:
+    0 22px 48px rgba(48, 35, 18, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.92);
+}
+
+.dashboard-section-header {
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  background:
+    linear-gradient(135deg, rgba(255, 248, 230, 0.96), rgba(233, 221, 188, 0.92)),
+    radial-gradient(circle at top right, rgba(216, 170, 61, 0.16), transparent 35%);
+  box-shadow:
+    0 12px 28px rgba(48, 35, 18, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.96);
+}
+
+.section-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  background: rgba(95, 143, 67, 0.12);
+  color: #3c5f2c;
+  font-size: 0.85rem;
+  font-weight: 900;
+  transition: transform 220ms ease;
+}
+
+.section-chevron-open {
+  transform: rotate(180deg);
+}
+
+.accordion-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 240ms ease,
+    opacity 180ms ease;
+}
+
+.accordion-panel-open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+.accordion-panel-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.payment-sheet {
+  border: 1px solid rgba(255, 255, 255, 0.82);
+}
+
+.payment-sheet-header {
+  background:
+    radial-gradient(circle at top right, rgba(216, 170, 61, 0.16), transparent 28%),
+    linear-gradient(160deg, #263422 0%, #3c4f2d 58%, #6b522c 100%);
+}
+
 .panel-strong {
   border: 1px solid rgba(255, 255, 255, 0.18);
   background:
@@ -559,6 +626,7 @@ button:active {
 .label-chip {
   display: inline-flex;
   align-items: center;
+  gap: 0.35rem;
   border-radius: 999px;
   padding: 0.34rem 0.68rem;
   font-size: 0.68rem;

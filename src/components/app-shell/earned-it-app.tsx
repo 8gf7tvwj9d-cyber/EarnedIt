@@ -23,7 +23,7 @@ import {
   submitRollingChore,
   writeAppData,
 } from "@/lib/storage/app-state";
-import { AppData, ChildProfile, ChoreDraft, User } from "@/types/app";
+import { AppData, ChildProfile, ChoreDraft, PaymentLineItem, User } from "@/types/app";
 
 type Toast = {
   id: number;
@@ -380,10 +380,10 @@ export function ChorePayApp() {
                   pushToast("Chore deleted");
                 });
               }}
-              onMarkPaid={(childId, notes) => {
+              onMarkPaid={(childId, notes, paymentItems?: PaymentLineItem[]) => {
                 void enqueueMutation(async (snapshot) => {
                   const before = snapshot.payouts.length;
-                  const next = markBalancePaid(snapshot, currentUser.id, childId, notes);
+                  const next = markBalancePaid(snapshot, currentUser.id, childId, notes, paymentItems);
                   await syncAppData(next);
                   pushToast(
                     next.payouts.length > before

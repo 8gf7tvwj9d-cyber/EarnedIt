@@ -14,7 +14,7 @@ import {
   normalizeRrcSchedule,
 } from "@/lib/chore-progress";
 import { demoData } from "@/lib/storage/demo-data";
-import { normalizeCents, parseMoneyToCents } from "@/lib/money";
+import { formatCentsForDollarInput, normalizeCents, parseMoneyToCents } from "@/lib/money";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import {
   AppData,
@@ -23,6 +23,7 @@ import {
   ChoreDraft,
   ChildProfile,
   Payout,
+  PaymentLineItem,
   RrcSchedule,
   User,
 } from "@/types/app";
@@ -1179,19 +1180,41 @@ export function markBalancePaid(
   parentId: string,
   childId: string,
   notes: string,
+  paymentItems?: PaymentLineItem[],
 ): AppData {
   const timestamp = new Date().toISOString();
-  const payable = appData.chores.filter(
-    (chore) => chore.child_id === childId && chore.status === "approved",
-  );
-  const amountCents = payable.reduce(
-    (sum, chore) => sum + chore.amount_cents,
-    0,
-  );
+  const explicitItems = paymentItems?.filter((item) => item.amountCents >= 0) ?? [];
+  const explicitIds = new Set(explicitItems.map((item) => item.choreId));
+  const payable =
+    explicitItems.length > 0
+      ? appData.chores.filter(
+          (chore) => chore.child_id === childId && chore.status === "approved" && explicitIds.has(chore.id),
+        )
+      : appData.chores.filter(
+          (chore) => chore.child_id === childId && chore.status === "approved",
+        );
+  const amountCents =
+    explicitItems.length > 0
+      ? explicitItems.reduce((sum, item) => sum + normalizeCents(item.amountCents), 0)
+      : payable.reduce((sum, chore) => sum + chore.amount_cents, 0);
 
-  if (amountCents === 0) {
+  if (payable.length === 0 || (amountCents === 0 && explicitItems.length === 0)) {
     return appData;
   }
+
+  const paymentDetails =
+    explicitItems.length > 0
+      ? explicitItems
+          .map((item) => {
+            const chore = appData.chores.find((entry) => entry.id === item.choreId);
+            return chore
+              ? `${chore.title}: ${item.statusLabel} (${formatCentsForDollarInput(item.amountCents)})`
+              : null;
+          })
+          .filter(Boolean)
+          .join("; ")
+      : "";
+  const payoutNotes = [notes.trim(), paymentDetails].filter(Boolean).join(" | ");
 
   const payout: Payout = {
     id: makeId("payout"),
@@ -1200,13 +1223,15 @@ export function markBalancePaid(
     amount_cents: amountCents,
     paid_method: "Manual Apple Cash",
     paid_at: timestamp,
-    notes: notes.trim() || null,
+    notes: payoutNotes || null,
   };
 
   return {
     ...appData,
     chores: appData.chores.map<Chore>((chore) =>
-      chore.child_id === childId && chore.status === "approved"
+      chore.child_id === childId &&
+      chore.status === "approved" &&
+      (explicitItems.length === 0 || explicitIds.has(chore.id))
         ? {
             ...chore,
             status: "paid",

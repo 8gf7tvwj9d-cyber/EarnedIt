@@ -1,8 +1,10 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { ChoreComposer } from "@/components/parent/chore-composer";
 import { ChoreGroup } from "@/components/parent/chore-group";
+import { PaymentReviewSheet } from "@/components/parent/payment-review-sheet";
 import {
   addDays,
   getLocalDateKey,
@@ -36,6 +38,7 @@ import {
   CheckIn,
   ChildProfile,
   Payout,
+  PaymentLineItem,
   User,
   WeekdayKey,
 } from "@/types/app";
@@ -50,7 +53,7 @@ type ParentDashboardProps = {
   onDeleteChore: (choreId: string) => void;
   onApprove: (choreId: string) => void;
   onReject: (choreId: string, note: string) => void;
-  onMarkPaid: (childId: string, notes: string) => void;
+  onMarkPaid: (childId: string, notes: string, paymentItems?: PaymentLineItem[]) => void;
 };
 
 const emptyDraft: ChoreDraft = {
@@ -76,6 +79,17 @@ const emptyDraft: ChoreDraft = {
   rrcSchedule: getRoutineDraftSchedule(),
 };
 
+function getDefaultParentSections() {
+  return {
+    pendingReview: true,
+    approvedAwaitingPayment: true,
+    active: false,
+    paid: false,
+    missed: false,
+    paymentHistory: false,
+  };
+}
+
 export function ParentDashboard({
   currentUser,
   childProfiles,
@@ -90,6 +104,7 @@ export function ParentDashboard({
 }: ParentDashboardProps) {
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [isPayoutCalendarOpen, setIsPayoutCalendarOpen] = useState(false);
+  const [isPaymentReviewOpen, setIsPaymentReviewOpen] = useState(false);
   const composerRef = useRef<HTMLDivElement | null>(null);
   const [draft, setDraft] = useState<ChoreDraft>({
     ...emptyDraft,
@@ -98,6 +113,18 @@ export function ParentDashboard({
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectionNote, setRejectionNote] = useState("");
   const [payoutNotes, setPayoutNotes] = useState("");
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => {
+    if (typeof window === "undefined") {
+      return getDefaultParentSections();
+    }
+
+    try {
+      const saved = window.sessionStorage.getItem("earned-parent-dashboard-sections");
+      return saved ? { ...getDefaultParentSections(), ...JSON.parse(saved) } : getDefaultParentSections();
+    } catch {
+      return getDefaultParentSections();
+    }
+  });
   const [lightboxImage, setLightboxImage] = useState<{ alt: string; src: string } | null>(null);
 
   const availableActive = chores.filter((chore) => {
@@ -163,6 +190,20 @@ export function ParentDashboard({
 
     composerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [draft.id, isComposerOpen]);
+
+  useEffect(() => {
+    window.sessionStorage.setItem(
+      "earned-parent-dashboard-sections",
+      JSON.stringify(openSections),
+    );
+  }, [openSections]);
+
+  function setSectionOpen(sectionId: string, isOpen: boolean) {
+    setOpenSections((current) => ({
+      ...current,
+      [sectionId]: isOpen,
+    }));
+  }
 
   function resetDraft() {
     setIsComposerOpen(false);
@@ -446,14 +487,13 @@ export function ParentDashboard({
             />
 
             <div className="space-y-4">
-              <div className="section-shell rounded-[30px] p-4">
-                <div className="mb-3 flex items-center justify-between">
-                  <div className="kicker-row text-slate-500">
-                    <span className="kicker-icon"><AppIcon className="h-4 w-4" name="check" /></span>
-                    Awaiting approval
-                  </div>
-                  <span className="stat-chip stat-chip-soft">{awaitingApproval.length} submitted</span>
-                </div>
+              <DashboardSection
+                count={`${awaitingApproval.length} submitted`}
+                icon="check"
+                isOpen={openSections.pendingReview}
+                title="Pending Review"
+                onOpenChange={(next) => setSectionOpen("pendingReview", next)}
+              >
                 <div className="space-y-3">
                   {awaitingApproval.length === 0 ? (
                     <EmptyState copy="No chores are waiting for review right now." />
@@ -463,43 +503,81 @@ export function ParentDashboard({
                     ))
                   )}
                 </div>
-              </div>
+              </DashboardSection>
 
-              <div className="section-shell rounded-[30px] p-4">
-                <div className="mb-3 flex items-center justify-between">
-                  <div className="kicker-row text-slate-500">
-                    <span className="kicker-icon"><AppIcon className="h-4 w-4" name="seed" /></span>
-                    Record payments
+              <DashboardSection
+                count={formatCurrency(totalUnpaidBalance)}
+                icon="wallet"
+                isOpen={openSections.approvedAwaitingPayment}
+                title="Approved / Awaiting Payment"
+                onOpenChange={(next) => setSectionOpen("approvedAwaitingPayment", next)}
+              >
+                <div className="space-y-3">
+                  <div className="rounded-[24px] border border-[#d8c075]/55 bg-[#fff8e6] p-4 text-slate-900">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="font-black">Payment queue</p>
+                        <p className="mt-1 text-sm leading-6 text-slate-600">
+                          Review approved chores before anything moves to paid.
+                        </p>
+                      </div>
+                      <span className="stat-chip stat-chip-soft">{approvedCompleted.length} approved</span>
+                    </div>
+                    <button
+                      className="action-button mt-4 w-full rounded-2xl bg-gradient-to-r from-[#5f8f43] to-[#d8aa3d] px-5 py-4 text-base font-black text-[#231d16] shadow-lg shadow-[#3d2b12]/14 disabled:cursor-not-allowed disabled:opacity-55"
+                      disabled={approvedCompleted.length === 0}
+                      onClick={() => setIsPaymentReviewOpen(true)}
+                      type="button"
+                    >
+                      Review Payments
+                    </button>
                   </div>
-                  <span className="stat-chip stat-chip-soft">Manual payment</span>
+                  <ChoreGroup allChores={chores} checkIns={checkIns} chores={approvedCompleted} childProfiles={childProfiles} isEmbedded onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Approved queue" />
                 </div>
-                <p className="text-sm leading-6 text-slate-700">Send money outside the app, then record the payment here so history stays accurate.</p>
-                <textarea className="field-surface mt-3 min-h-22 w-full rounded-2xl px-4 py-3 text-sm text-slate-900" placeholder="Optional payment note" value={payoutNotes} onChange={(event) => setPayoutNotes(event.target.value)} />
-                <button className="action-button mt-3 w-full rounded-2xl bg-gradient-to-r from-[#6f9a52] to-[#d4ad4f] px-5 py-4 text-base font-black text-[#231d16] shadow-lg shadow-[#3d2b12]/14" onClick={() => { const primaryChild = childProfiles[0]; if (primaryChild) { onMarkPaid(primaryChild.id, payoutNotes); setPayoutNotes(""); } }} type="button">
-                  Record payment
-                </button>
-              </div>
+              </DashboardSection>
             </div>
           </div>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          <ChoreGroup allChores={chores} checkIns={checkIns} chores={availableActive} childProfiles={childProfiles} onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Available / active" />
-          <ChoreGroup allChores={chores} checkIns={checkIns} chores={approvedCompleted} childProfiles={childProfiles} onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Approved / completed" />
-          <ChoreGroup allChores={chores} checkIns={checkIns} chores={missedExpired} childProfiles={childProfiles} onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Missed / expired" />
+        <div className="space-y-5">
+          <DashboardSection
+            count={`${availableActive.length} active`}
+            icon="sprout"
+            isOpen={openSections.active}
+            title="Available / Active"
+            onOpenChange={(next) => setSectionOpen("active", next)}
+          >
+            <ChoreGroup allChores={chores} checkIns={checkIns} chores={availableActive} childProfiles={childProfiles} isEmbedded onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Active chores" />
+          </DashboardSection>
+
+          <DashboardSection
+            count={`${paidChores.length} paid`}
+            icon="trophy"
+            isOpen={openSections.paid}
+            title="Paid"
+            onOpenChange={(next) => setSectionOpen("paid", next)}
+          >
+            <ChoreGroup allChores={chores} checkIns={checkIns} chores={paidChores} childProfiles={childProfiles} isEmbedded onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Paid chores" />
+          </DashboardSection>
+
+          <DashboardSection
+            count={`${missedExpired.length} missed`}
+            icon="clock"
+            isOpen={openSections.missed}
+            title="Archived / Missed"
+            onOpenChange={(next) => setSectionOpen("missed", next)}
+          >
+            <ChoreGroup allChores={chores} checkIns={checkIns} chores={missedExpired} childProfiles={childProfiles} isEmbedded onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Missed / expired" />
+          </DashboardSection>
         </div>
 
-        <div className="section-shell rounded-[30px] p-5 sm:p-6">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <div className="kicker-row text-slate-500">
-                <span className="kicker-icon"><AppIcon className="h-4 w-4" name="seed" /></span>
-                Payment history
-              </div>
-              <h3 className="mt-2 font-mono text-2xl font-black text-slate-900">Paid rewards history</h3>
-            </div>
-            <span className="stat-chip stat-chip-soft">{formatCurrency(payouts.reduce((sum, payout) => sum + payout.amount_cents, 0))}</span>
-          </div>
+        <DashboardSection
+          count={formatCurrency(payouts.reduce((sum, payout) => sum + payout.amount_cents, 0))}
+          icon="seed"
+          isOpen={openSections.paymentHistory}
+          title="Payment History"
+          onOpenChange={(next) => setSectionOpen("paymentHistory", next)}
+        >
           <div className="space-y-3">
             {recentPayouts.length === 0 ? <EmptyState copy="No payments have been recorded yet." /> : recentPayouts.map((payout) => {
               const payoutChores = chores.filter(
@@ -514,7 +592,7 @@ export function ParentDashboard({
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="support-label">Recent payment</p>
-                      <p className="mt-2 text-3xl font-black tracking-[-0.04em] text-slate-900">{formatCurrency(payout.amount_cents)}</p>
+                      <p className="mt-2 text-3xl font-black text-slate-900">{formatCurrency(payout.amount_cents)}</p>
                       <p className="text-sm text-slate-600">{formatDate(getLocalDateKey(payout.paid_at))}</p>
                     </div>
                     <span className="stat-chip stat-chip-soft">{payout.paid_method}</span>
@@ -530,7 +608,7 @@ export function ParentDashboard({
           <button className="action-button mt-4 w-full rounded-2xl bg-gradient-to-r from-[#6f9a52] to-[#d4ad4f] px-5 py-4 text-base font-black text-[#231d16] shadow-lg shadow-[#3d2b12]/14" onClick={() => setIsPayoutCalendarOpen(true)} type="button">
             View payment calendar
           </button>
-        </div>
+        </DashboardSection>
       </section>
       {lightboxImage ? (
         <ImageLightbox alt={lightboxImage.alt} onClose={() => setLightboxImage(null)} src={lightboxImage.src} />
@@ -543,6 +621,61 @@ export function ParentDashboard({
           onClose={() => setIsPayoutCalendarOpen(false)}
         />
       ) : null}
+      {isPaymentReviewOpen ? (
+        <PaymentReviewSheet
+          childProfiles={childProfiles}
+          chores={approvedCompleted}
+          notes={payoutNotes}
+          onClose={() => setIsPaymentReviewOpen(false)}
+          onConfirm={(childId, notes, paymentItems) => {
+            onMarkPaid(childId, notes, paymentItems);
+            setPayoutNotes("");
+            setIsPaymentReviewOpen(false);
+          }}
+          onNotesChange={setPayoutNotes}
+        />
+      ) : null}
     </div>
+  );
+}
+
+function DashboardSection({
+  children,
+  count,
+  icon,
+  isOpen,
+  title,
+  onOpenChange,
+}: {
+  children: ReactNode;
+  count: string;
+  icon: "check" | "clock" | "seed" | "sprout" | "trophy" | "wallet";
+  isOpen: boolean;
+  title: string;
+  onOpenChange: (next: boolean) => void;
+}) {
+  return (
+    <section className="dashboard-section-shell rounded-[32px]">
+      <button
+        aria-expanded={isOpen}
+        className="dashboard-section-header w-full rounded-[28px] px-4 py-4 text-left sm:px-5"
+        onClick={() => onOpenChange(!isOpen)}
+        type="button"
+      >
+        <span className="flex items-center justify-between gap-3">
+          <span className="flex min-w-0 items-center gap-3">
+            <span className="kicker-icon shrink-0"><AppIcon className="h-4 w-4" name={icon} /></span>
+            <span className="min-w-0">
+              <span className="block font-mono text-xl font-black text-slate-950 sm:text-2xl">{title}</span>
+              <span className="mt-1 block text-xs font-black uppercase tracking-[0.16em] text-[#6d5a2d]">{count}</span>
+            </span>
+          </span>
+          <span className={`section-chevron ${isOpen ? "section-chevron-open" : ""}`} aria-hidden="true">v</span>
+        </span>
+      </button>
+      <div className={`accordion-panel ${isOpen ? "accordion-panel-open" : ""}`}>
+        <div className="accordion-panel-inner px-3 pb-4 pt-2 sm:px-4">{children}</div>
+      </div>
+    </section>
   );
 }

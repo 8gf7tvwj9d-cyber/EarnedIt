@@ -65,7 +65,7 @@ export function ReviewCard({
             <div className="mt-2 flex flex-wrap gap-2">
               <span className="label-chip label-chip-soft">{getChoreKindLabel(chore)}</span>
               {isOptionalChore(chore) ? <span className="label-chip label-chip-soft">{optionalState?.resetLabel}</span> : null}
-              {isRoutineChore(chore) ? <span className="label-chip label-chip-soft">{brokenStreak ? "Streak broken" : "All days required"}</span> : null}
+              {isRoutineChore(chore) ? <span className="label-chip label-chip-soft"><AppIcon className="h-3 w-3" name="repeat" /> {brokenStreak ? "Streak broken" : "Repeating"}</span> : null}
             </div>
           </div>
         </div>
