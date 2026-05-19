@@ -66,7 +66,7 @@ export function getTreeProgress(chores: Chore[], checkIns: CheckIn[]): TreeProgr
     }, 0);
 
     const consistencyBonus =
-      missedRequiredCount === 0 && requiredChores.length > 0
+      missedRequiredCount === 0 && requiredChores.length > 0 && requiredXp > 0
         ? Math.min(requiredChores.length * 8, 32)
         : 0;
     const totalXp = requiredXp + optionalXp + oneTimeXp + consistencyBonus;

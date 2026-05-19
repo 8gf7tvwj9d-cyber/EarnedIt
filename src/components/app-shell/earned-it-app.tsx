@@ -363,12 +363,12 @@ export function EarnedItApp() {
             </section>
           ) : currentUser.role === "parent" ? (
             <ParentDashboard
+              currentUser={currentUser}
               checkIns={appData.checkIns}
               childProfiles={appData.childProfiles.filter(
                 (profile) => profile.parent_id === currentUser.id,
               )}
               chores={appData.chores.filter((chore) => chore.parent_id === currentUser.id)}
-              currentUser={currentUser}
               payouts={appData.payouts.filter((payout) => payout.parent_id === currentUser.id)}
               onApprove={(choreId) => {
                 void enqueueMutation(async (snapshot) => {
@@ -425,7 +425,6 @@ export function EarnedItApp() {
               childProfile={childProfile}
               checkIns={appData.checkIns.filter((entry) => entry.child_id === childProfile.id)}
               chores={childChores}
-              currentUser={currentUser}
               payouts={childPayouts}
               onAddRollingProof={async (choreId, photos): Promise<RoutineSaveResult> => {
                 let result: RoutineSaveResult = {

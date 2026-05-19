@@ -24,11 +24,10 @@ import {
   isRoutineChore,
   isChoreScheduledForDate,
 } from "@/lib/chore-helpers";
-import { CheckIn, Chore, ChildProfile, Payout, ProofPhotoInput, User } from "@/types/app";
+import { CheckIn, Chore, ChildProfile, Payout, ProofPhotoInput } from "@/types/app";
 import { defaultTreeProgress, getTreeProgress } from "@/lib/growth-tree/tree-progress";
 
 type ChildDashboardProps = {
-  currentUser: User;
   childProfile: ChildProfile;
   chores: Chore[];
   checkIns: CheckIn[];
@@ -52,7 +51,6 @@ function getDefaultChildSections() {
 }
 
 export function ChildDashboard({
-  currentUser,
   childProfile,
   chores,
   checkIns,
