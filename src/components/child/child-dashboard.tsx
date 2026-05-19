@@ -83,14 +83,20 @@ export function ChildDashboard({
   const [isTreeCelebrating, setIsTreeCelebrating] = useState(false);
   const [lightboxImage, setLightboxImage] = useState<{ alt: string; src: string } | null>(null);
 
-  const assignedChores = chores.filter((chore) => {
-    const status = getComputedStatus(chore, checkIns);
-    if (isOptionalInstanceChore(chore)) {
-      return false;
-    }
+  const assignedChores = chores
+    .filter((chore) => {
+      const status = getComputedStatus(chore, checkIns);
+      if (isOptionalInstanceChore(chore)) {
+        return false;
+      }
 
-    return status === "available" || status === "rejected" || status === "expired";
-  });
+      return status === "available" || status === "rejected" || status === "expired";
+    })
+    .sort((left, right) => {
+      const leftPriority = isRoutineChore(left) ? 0 : 1;
+      const rightPriority = isRoutineChore(right) ? 0 : 1;
+      return leftPriority - rightPriority;
+    });
   const awaitingApproval = chores.filter((chore) => {
     if (isOptionalTemplateChore(chore)) {
       return false;
