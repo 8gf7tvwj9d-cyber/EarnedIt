@@ -1,8 +1,8 @@
-# Earned
+# EarnedIt
 
-Earned is a mobile-first MVP web app for tracking parent-approved chores and manual payouts.
+EarnedIt is a mobile-first MVP web app for tracking parent-approved chores and manual payouts.
 
-It does not move real money. Parents pay outside the app with something like Apple Cash, then log that payout inside Earned.
+It does not move real money. Parents pay outside the app with something like Apple Cash, then log that payout inside EarnedIt.
 
 ## What this MVP includes
 
@@ -63,8 +63,8 @@ Right now the UI detects those variables and marks the project as Supabase-conne
 
 ## Database files
 
-- Migration: [supabase/migrations/20260506_create_chorepay_schema.sql](/C:/Users/blief/Desktop/chore%20app/chorepay/supabase/migrations/20260506_create_chorepay_schema.sql)
-- Seed data: [supabase/seed.sql](/C:/Users/blief/Desktop/chore%20app/chorepay/supabase/seed.sql)
+- Migration: [supabase/migrations/20260506_create_earnedit_schema.sql](supabase/migrations/20260506_create_earnedit_schema.sql)
+- Seed data: [supabase/seed.sql](supabase/seed.sql)
 
 Core tables:
 
@@ -88,3 +88,6 @@ Core tables:
 3. Upload proof photos to a Supabase Storage bucket
 4. Add row-level security policies per parent and child
 5. Add support for multiple children under one parent account
+
+
+

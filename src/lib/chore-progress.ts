@@ -28,8 +28,10 @@ export function getNormalizedCheckInsForChore(chore: Chore, checkIns: CheckIn[])
       parent_id: chore.parent_id,
       child_id: chore.child_id,
       photo_url: entry.photo_url,
+      photos: entry.photos,
       check_in_date: entry.proof_date,
       submitted_at: entry.submitted_at,
+      uploaded_at: entry.uploaded_at ?? entry.submitted_at,
     }));
 
   return [...persisted, ...legacyEntries].sort((left, right) =>
@@ -351,6 +353,13 @@ export function getRequiredDatesForRrcCycle(
   return requiredDates;
 }
 
+function getProtectedRequiredDates(chore: Chore, cycleStartDate: string, cycleEndDate: string) {
+  return new Set(
+    (chore.streak_overrides ?? [])
+      .map((entry) => entry.missed_date)
+      .filter((date) => date >= cycleStartDate && date <= cycleEndDate),
+  );
+}
 export function getRrcStatus(
   chore: Chore,
   checkIns: CheckIn[],
@@ -372,23 +381,25 @@ export function getRrcStatus(
           date <= cycleWindow.cycleEndDate,
       ),
   );
-  const missedDate = requiredDates.find((requiredDate) => requiredDate < todayKey && !savedDates.has(requiredDate)) ?? null;
+  const protectedDates = getProtectedRequiredDates(chore, cycleWindow.cycleStartDate, cycleWindow.cycleEndDate);
+  const fulfilledDates = new Set([...savedDates, ...protectedDates]);
+  const missedDate = requiredDates.find((requiredDate) => requiredDate < todayKey && !fulfilledDates.has(requiredDate)) ?? null;
   const isBroken = Boolean(missedDate);
   const completedDates = requiredDates.filter(
     (requiredDate) =>
-      savedDates.has(requiredDate) && (!missedDate || requiredDate < missedDate),
+      fulfilledDates.has(requiredDate) && (!missedDate || requiredDate < missedDate),
   );
   const isComplete =
     !isBroken &&
     requiredDates.length > 0 &&
-    requiredDates.every((requiredDate) => savedDates.has(requiredDate));
+    requiredDates.every((requiredDate) => fulfilledDates.has(requiredDate));
   const nextRestartDate = isBroken
     ? getNextCycleStartDate(chore, cycleWindow.cycleStartDate)
     : null;
   const canCheckInToday =
     !isBroken &&
     requiredDates.includes(todayKey) &&
-    !savedDates.has(todayKey) &&
+    !fulfilledDates.has(todayKey) &&
     chore.status !== "submitted" &&
     chore.status !== "approved" &&
     chore.status !== "paid";
@@ -399,6 +410,7 @@ export function getRrcStatus(
     cycleEndDate: cycleWindow.cycleEndDate,
     requiredDates,
     completedDates,
+    protectedDates: [...protectedDates],
     approvedDates:
       chore.status === "approved" || chore.status === "paid" ? [...completedDates] : [],
     missedDate,
@@ -494,15 +506,18 @@ export function getRequiredProgress(
   const savedDates = new Set(
     getNormalizedCheckInsForChore(chore, checkIns).map((entry) => entry.check_in_date),
   );
-  const completedDates = requiredDates.filter((requiredDate) => savedDates.has(requiredDate));
-  const missedDates = requiredDates.filter((requiredDate) => requiredDate < date && !savedDates.has(requiredDate));
+  const protectedDates = new Set((chore.streak_overrides ?? []).map((entry) => entry.missed_date));
+  const fulfilledDates = new Set([...savedDates, ...protectedDates]);
+  const completedDates = requiredDates.filter((requiredDate) => fulfilledDates.has(requiredDate));
+  const missedDates = requiredDates.filter((requiredDate) => requiredDate < date && !fulfilledDates.has(requiredDate));
   const totalNeeded = Math.max(chore.total_required_completions ?? requiredDates.length, 1);
 
   return {
     requiredDates,
     completedDates,
+    protectedDates: [...protectedDates],
     missedDates,
-    todayCompleted: savedDates.has(date),
+    todayCompleted: fulfilledDates.has(date),
     totalNeeded,
     progressCount: completedDates.length,
     progressLabel: `${completedDates.length} of ${totalNeeded} days completed`,
@@ -517,7 +532,7 @@ export function getRequiredProgress(
     cycleId: null,
     cycleStartDate: chore.start_date ?? getLocalDateFromTimestamp(chore.created_at),
     cycleEndDate: chore.due_date ?? chore.start_date ?? getLocalDateFromTimestamp(chore.created_at),
-    canCheckInToday: !savedDates.has(date),
+    canCheckInToday: !fulfilledDates.has(date),
     nextRestartDate: null,
   };
 }

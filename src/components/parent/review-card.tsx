@@ -2,7 +2,7 @@
 
 import { StatusBadge } from "@/components/status-badge";
 import { AppIcon, getChoreIcon } from "@/components/ui-icons";
-import { formatCurrency, formatDate, formatShortDateTime } from "@/lib/format";
+import { formatCurrency, formatDate, formatReadableDateTime, formatShortDateTime } from "@/lib/format";
 import {
   getChoreKindLabel,
   getComputedStatus,
@@ -108,7 +108,8 @@ export function ReviewCard({
             {proofEntries.map((entry) => (
               <button key={entry.id} className="review-photo rounded-2xl p-2 text-left" onClick={() => onOpenLightbox(entry.photo_url, `${chore.title} proof for ${entry.proof_date}`)} type="button">
                 <img alt={`${chore.title} proof for ${entry.proof_date}`} className="h-32 w-full rounded-xl object-cover" src={entry.photo_url} />
-                <p className="mt-2 text-xs font-bold uppercase tracking-[0.18em] text-slate-500">{entry.proof_date}</p>
+                <p className="mt-2 text-xs font-bold uppercase tracking-[0.18em] text-slate-500">{entry.label ?? "Proof"} - {entry.proof_date}</p>
+                <p className="text-xs text-slate-600">Uploaded {entry.uploaded_at ? formatReadableDateTime(entry.uploaded_at) : "time unavailable"}</p>
               </button>
             ))}
           </div>

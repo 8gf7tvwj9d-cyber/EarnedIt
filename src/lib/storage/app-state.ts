@@ -22,13 +22,16 @@ import {
   Chore,
   ChoreDraft,
   ChildProfile,
+  ChoreProofPhoto,
   Payout,
   PaymentLineItem,
+  ProofPhotoInput,
   RrcSchedule,
   User,
 } from "@/types/app";
 
-const STORAGE_KEY = "chorepay-family-store-v2";
+const STORAGE_KEY = "earnedit-family-store-v2";
+const LEGACY_STORAGE_KEYS = ["chorepay-family-store-v2"];
 const APP_DATA_SCHEMA_VERSION = 1;
 const SHARED_TABLE = "household_app_state";
 const DEFAULT_HOUSEHOLD_ID = "family-household-1";
@@ -245,7 +248,8 @@ function normalizeChore(chore: Chore): Chore {
             start_date: chore.start_date,
           })
         : chore.rrc_schedule ?? null,
-    proof_entries: chore.proof_entries ?? [],
+    proof_entries: normalizeProofEntries(chore),
+    streak_overrides: chore.streak_overrides ?? [],
     is_template:
       chore.is_template ??
       Boolean(normalizedKind === "optional" && chore.template_chore_id == null),
@@ -261,7 +265,7 @@ function normalizeAppData(appData: AppData): AppData {
     ...payout,
     amount_cents: normalizeCents(payout.amount_cents),
   }));
-  const existingCheckIns = appData.checkIns ?? [];
+  const existingCheckIns = (appData.checkIns ?? []).map(normalizeCheckIn);
   const existingKeys = new Set(
     existingCheckIns.map((entry) => `${entry.chore_id}:${entry.check_in_date}`),
   );
@@ -274,8 +278,10 @@ function normalizeAppData(appData: AppData): AppData {
         parent_id: chore.parent_id,
         child_id: chore.child_id,
         photo_url: entry.photo_url,
+        photos: entry.photos,
         check_in_date: entry.proof_date,
         submitted_at: entry.submitted_at,
+        uploaded_at: entry.uploaded_at ?? entry.submitted_at,
       })),
   );
 
@@ -342,6 +348,92 @@ function makeId(prefix: string) {
 
   return `${prefix}-${Math.random().toString(36).slice(2, 11)}`;
 }
+function normalizeProofPhotoInputs(photos: ProofPhotoInput[] | string | null | undefined): ProofPhotoInput[] {
+  if (!photos) {
+    return [];
+  }
+
+  if (typeof photos === "string") {
+    return photos
+      ? [{ photo_url: photos, uploaded_at: new Date().toISOString(), label: null }]
+      : [];
+  }
+
+  return photos.filter((photo) => Boolean(photo.photo_url));
+}
+
+function createProofPhotos(photos: ProofPhotoInput[]): ChoreProofPhoto[] {
+  return photos.map((photo) => ({
+    id: makeId("photo"),
+    photo_url: photo.photo_url,
+    uploaded_at: photo.uploaded_at,
+    label: photo.label ?? null,
+  }));
+}
+
+function createProofEntries(photos: ProofPhotoInput[], proofDate: string, submittedAt: string) {
+  const proofPhotos = createProofPhotos(photos);
+  return proofPhotos.map((photo) => ({
+    id: makeId("proof"),
+    proof_date: proofDate,
+    photo_url: photo.photo_url,
+    submitted_at: submittedAt,
+    uploaded_at: photo.uploaded_at,
+    label: photo.label ?? null,
+    photos: [photo],
+  }));
+}
+
+function normalizeProofEntries(chore: Partial<Chore>) {
+  return (chore.proof_entries ?? []).map((entry) => {
+    const uploadedAt = entry.uploaded_at ?? entry.submitted_at ?? chore.submitted_at ?? chore.updated_at ?? null;
+    const photos = entry.photos?.length
+      ? entry.photos.map((photo) => ({
+          id: photo.id,
+          photo_url: photo.photo_url,
+          uploaded_at: photo.uploaded_at ?? uploadedAt,
+          label: photo.label ?? entry.label ?? null,
+        }))
+      : [
+          {
+            id: `${entry.id}-photo`,
+            photo_url: entry.photo_url,
+            uploaded_at: uploadedAt,
+            label: entry.label ?? null,
+          },
+        ];
+
+    return {
+      ...entry,
+      uploaded_at: uploadedAt,
+      label: entry.label ?? null,
+      photos,
+    };
+  });
+}
+
+function normalizeCheckIn(entry: CheckIn): CheckIn {
+  const uploadedAt = entry.uploaded_at ?? entry.submitted_at;
+  return {
+    ...entry,
+    uploaded_at: uploadedAt,
+    photos: entry.photos?.length
+      ? entry.photos.map((photo) => ({
+          id: photo.id,
+          photo_url: photo.photo_url,
+          uploaded_at: photo.uploaded_at ?? uploadedAt,
+          label: photo.label ?? null,
+        }))
+      : [
+          {
+            id: `${entry.id}-photo`,
+            photo_url: entry.photo_url,
+            uploaded_at: uploadedAt,
+            label: null,
+          },
+        ],
+  };
+}
 
 export function initializeAppData(): AppDataInitialization {
   if (typeof window === "undefined") {
@@ -351,7 +443,9 @@ export function initializeAppData(): AppDataInitialization {
     };
   }
 
-  const raw = window.localStorage.getItem(STORAGE_KEY);
+  const raw =
+    window.localStorage.getItem(STORAGE_KEY) ??
+    LEGACY_STORAGE_KEYS.map((key) => window.localStorage.getItem(key)).find(Boolean);
   if (!raw) {
     return {
       appData: getNormalizedDemoData(),
@@ -841,6 +935,7 @@ export function saveChore(
     rejection_note: null,
     photo_url: null,
     proof_entries: [],
+    streak_overrides: [],
     submitted_at: null,
     approved_at: null,
     paid_at: null,
@@ -868,11 +963,14 @@ export function deleteChore(appData: AppData, choreId: string) {
 export function submitChore(
   appData: AppData,
   choreId: string,
-  photoUrl: string | null,
+  photosInput: ProofPhotoInput[] | string | null,
 ): AppData {
   const timestamp = new Date().toISOString();
   const today = getTodayIsoDate();
   const selectedChore = appData.chores.find((chore) => chore.id === choreId);
+  const photos = normalizeProofPhotoInputs(photosInput);
+  const primaryPhotoUrl = photos[0]?.photo_url ?? null;
+  const proofEntries = photos.length > 0 ? createProofEntries(photos, today, timestamp) : [];
 
   if (
     selectedChore &&
@@ -891,17 +989,9 @@ export function submitChore(
       template_chore_id: selectedChore.id,
       instance_period_key: getCurrentPeriodKey(selectedChore, today),
       status: "submitted",
-      photo_url: photoUrl,
-      proof_entries: photoUrl
-        ? [
-            {
-              id: makeId("proof"),
-              proof_date: today,
-              photo_url: photoUrl,
-              submitted_at: timestamp,
-            },
-          ]
-        : [],
+      photo_url: primaryPhotoUrl,
+      proof_entries: proofEntries,
+      streak_overrides: [],
       rejection_note: null,
       submitted_at: timestamp,
       approved_at: null,
@@ -923,17 +1013,8 @@ export function submitChore(
         ? {
             ...chore,
             status: "submitted",
-            photo_url: photoUrl,
-            proof_entries: photoUrl
-              ? [
-                  {
-                    id: makeId("proof"),
-                    proof_date: today,
-                    photo_url: photoUrl,
-                    submitted_at: timestamp,
-                  },
-                ]
-              : chore.proof_entries,
+            photo_url: primaryPhotoUrl,
+            proof_entries: proofEntries.length > 0 ? proofEntries : chore.proof_entries,
             rejection_note: null,
             submitted_at: timestamp,
             updated_at: timestamp,
@@ -942,7 +1023,6 @@ export function submitChore(
     ),
   };
 }
-
 export function approveChore(appData: AppData, choreId: string) {
   const timestamp = new Date().toISOString();
   const chore = appData.chores.find((entry) => entry.id === choreId);
@@ -969,31 +1049,28 @@ export function approveChore(appData: AppData, choreId: string) {
 export function addRollingProof(
   appData: AppData,
   choreId: string,
-  photoUrl: string,
+  photosInput: ProofPhotoInput[] | string,
   proofDate = getTodayIsoDate(),
 ): AppData {
   const timestamp = new Date().toISOString();
+  const photos = normalizeProofPhotoInputs(photosInput);
+  const primaryPhotoUrl = photos[0]?.photo_url ?? null;
 
   return {
     ...appData,
     chores: appData.chores.map<Chore>((chore) => {
-      if (chore.id !== choreId) {
+      if (chore.id !== choreId || !primaryPhotoUrl) {
         return chore;
       }
 
       const nextEntries = [
         ...chore.proof_entries.filter((entry) => entry.proof_date !== proofDate),
-        {
-          id: makeId("proof"),
-          proof_date: proofDate,
-          photo_url: photoUrl,
-          submitted_at: timestamp,
-        },
+        ...createProofEntries(photos, proofDate, timestamp),
       ].sort((left, right) => left.proof_date.localeCompare(right.proof_date));
 
       return {
         ...chore,
-        photo_url: photoUrl,
+        photo_url: primaryPhotoUrl,
         proof_entries: nextEntries,
         updated_at: timestamp,
         rejection_note: null,
@@ -1001,7 +1078,6 @@ export function addRollingProof(
     }),
   };
 }
-
 export function submitRollingChore(appData: AppData, choreId: string): AppData {
   const timestamp = new Date().toISOString();
 
@@ -1039,7 +1115,7 @@ export function submitRollingChore(appData: AppData, choreId: string): AppData {
 export function saveRoutineCheckIn(
   appData: AppData,
   choreId: string,
-  photoUrl: string,
+  photosInput: ProofPhotoInput[] | string,
   checkInDate = getTodayIsoDate(),
 ) {
   console.log("[Earned] Save Check-In clicked", { choreId, checkInDate });
@@ -1057,7 +1133,10 @@ export function saveRoutineCheckIn(
     };
   }
 
-  if (!photoUrl) {
+  const photos = normalizeProofPhotoInputs(photosInput);
+  const primaryPhotoUrl = photos[0]?.photo_url ?? null;
+
+  if (!primaryPhotoUrl) {
     console.error("[Earned] Save Check-In failed: missing photo", { choreId });
     return {
       appData,
@@ -1071,7 +1150,7 @@ export function saveRoutineCheckIn(
 
   console.log("[Earned] photo upload success", {
     choreId,
-    photoLength: photoUrl.length,
+    photoCount: photos.length,
   });
 
   const existingCheckIn = getCheckInForChoreDate(appData.checkIns, choreId, checkInDate);
@@ -1105,14 +1184,17 @@ export function saveRoutineCheckIn(
     };
   }
 
+  const submittedAt = new Date().toISOString();
   const checkIn: CheckIn = {
     id: makeId("checkin"),
     chore_id: chore.id,
     parent_id: chore.parent_id,
     child_id: chore.child_id,
-    photo_url: photoUrl,
+    photo_url: primaryPhotoUrl,
+    photos: createProofPhotos(photos),
     check_in_date: checkInDate,
-    submitted_at: new Date().toISOString(),
+    submitted_at: submittedAt,
+    uploaded_at: photos[0]?.uploaded_at ?? submittedAt,
   };
 
   console.log("[Earned] check-in record created", checkIn);
@@ -1144,14 +1226,54 @@ export function saveRoutineCheckIn(
 
   return {
     appData: nextData,
-    message: "Today's proof was added",
+    message: photos.length > 1 ? "Today's proofs were added" : "Today's proof was added",
     ok: true,
     persisted: true,
     rawStoredCheckInsCount: nextData.checkIns.length,
     filteredCheckInsCount: nextData.checkIns.filter((entry) => entry.chore_id === choreId).length,
   };
 }
+export function overrideMissedStreak(
+  appData: AppData,
+  choreId: string,
+  missedDate: string,
+  note: string,
+  parentUser: User,
+): AppData {
+  if (parentUser.role !== "parent") {
+    return appData;
+  }
 
+  const timestamp = new Date().toISOString();
+  return {
+    ...appData,
+    chores: appData.chores.map<Chore>((chore) => {
+      if (chore.id !== choreId || chore.chore_kind !== "routine") {
+        return chore;
+      }
+
+      const existingOverrides = chore.streak_overrides ?? [];
+      const nextOverride = {
+        id: makeId("override"),
+        missed_date: missedDate,
+        override_at: timestamp,
+        override_type: "excused" as const,
+        note: note.trim() || null,
+        parent_user_id: parentUser.id,
+        parent_name: parentUser.name,
+      };
+
+      return {
+        ...chore,
+        streak_overrides: [
+          ...existingOverrides.filter((entry) => entry.missed_date !== missedDate),
+          nextOverride,
+        ].sort((left, right) => left.missed_date.localeCompare(right.missed_date)),
+        updated_at: timestamp,
+      };
+    }),
+  };
+}
 export function rejectChore(
   appData: AppData,
   choreId: string,
@@ -1243,3 +1365,5 @@ export function markBalancePaid(
     payouts: [payout, ...appData.payouts],
   };
 }
+
+

@@ -1,10 +1,10 @@
 /* eslint-disable @next/next/no-img-element */
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { EmptyState } from "@/components/parent/parent-ui";
 import { StatusBadge } from "@/components/status-badge";
 import { AppIcon, getChoreIcon } from "@/components/ui-icons";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency, formatDate, formatReadableDateTime } from "@/lib/format";
 import {
   formatRepeatSchedule,
   getChoreKindLabel,
@@ -13,6 +13,7 @@ import {
   getProofEntries,
   getRequiredRollingStreakStatus,
   getRoutineProgressDisplay,
+  getStreakOverrideForDate,
   isOptionalChore,
   isRoutineChore,
 } from "@/lib/chore-helpers";
@@ -31,6 +32,7 @@ export function ChoreGroup({
   onDeleteChore,
   onOpenChange,
   onOpenLightbox,
+  onOverrideMissedStreak,
   sortControl,
 }: {
   title: string;
@@ -45,8 +47,12 @@ export function ChoreGroup({
   onDeleteChore: (choreId: string) => void;
   onOpenChange?: (next: boolean) => void;
   onOpenLightbox: (src: string, alt: string) => void;
+  onOverrideMissedStreak: (choreId: string, missedDate: string, note: string) => void;
   sortControl?: ReactNode;
 }) {
+  const [overrideTargetId, setOverrideTargetId] = useState<string | null>(null);
+  const [overrideNote, setOverrideNote] = useState("");
+
   return (
     <div className={isEmbedded ? "" : "section-shell rounded-[32px] p-5 sm:p-6"}>
       <div className={isEmbedded ? "sr-only" : "mb-4 flex items-center justify-between"}>
@@ -74,11 +80,12 @@ export function ChoreGroup({
             ? getRequiredRollingStreakStatus(chore, checkIns, chore.child_id)
             : null;
           const brokenStreak = Boolean(streakStatus?.isBroken);
+          const latestStreakOverride = chore.streak_overrides?.[chore.streak_overrides.length - 1] ?? null;
+          const streakOverride = getStreakOverrideForDate(chore, streakStatus?.missedDate) ?? latestStreakOverride;
           const optionalState = isOptionalChore(chore)
             ? getOptionalChoreState(allChores, chore, undefined, checkIns)
             : null;
           const proofEntries = getProofEntries(chore, checkIns);
-          const latestProofImage = proofEntries[proofEntries.length - 1]?.photo_url ?? null;
           return (
             <article key={chore.id} className={`parent-card card-spotlight rounded-[26px] border p-4 shadow-[0_10px_24px_rgba(56,44,103,0.06)] ${brokenStreak ? "border-rose-300 bg-rose-950/35" : "border-white/12"}`}>
               <div className="flex items-start justify-between gap-3">
@@ -122,16 +129,44 @@ export function ChoreGroup({
                   ) : null}
                 </div>
               ) : null}
-              <div className="mt-3 grid gap-2 text-sm text-slate-200">
+              {streakOverride ? (
+                <div className="mt-3 rounded-[22px] border border-emerald-200/40 bg-emerald-50/95 px-3 py-3 text-sm text-emerald-950">
+                  <p className="font-black">Streak protected: missed {formatDate(streakOverride.missed_date)} was excused.</p>
+                  <p className="mt-1">Overridden {formatReadableDateTime(streakOverride.override_at)}{streakOverride.parent_name ? ` by ${streakOverride.parent_name}` : ""}.</p>
+                  {streakOverride.note ? <p className="mt-2 rounded-2xl bg-white/80 px-3 py-2">Reason: {streakOverride.note}</p> : null}
+                </div>
+              ) : brokenStreak && streakStatus?.missedDate ? (
+                <div className="mt-3 rounded-[22px] border border-amber-200/50 bg-amber-50/95 px-3 py-3 text-sm text-amber-950">
+                  <p className="font-black">Parent override available</p>
+                  <p className="mt-1">Excuse the missed {formatDate(streakStatus.missedDate)} check-in to protect the streak and keep an audit note.</p>
+                  {overrideTargetId === chore.id ? (
+                    <div className="mt-3 space-y-2">
+                      <textarea className="field-surface min-h-20 w-full rounded-2xl px-3 py-2 text-sm text-slate-900" placeholder="Optional reason, like completed but forgot to check in" value={overrideNote} onChange={(event) => setOverrideNote(event.target.value)} />
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <button className="action-button flex-1 rounded-2xl bg-emerald-600 px-4 py-3 font-black text-white" onClick={() => { onOverrideMissedStreak(chore.id, streakStatus.missedDate ?? "", overrideNote); setOverrideTargetId(null); setOverrideNote(""); }} type="button">Excuse missed chore</button>
+                        <button className="action-button rounded-2xl border border-slate-300 bg-white px-4 py-3 font-black text-slate-800" onClick={() => { setOverrideTargetId(null); setOverrideNote(""); }} type="button">Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button className="action-button mt-3 w-full rounded-2xl bg-emerald-600 px-4 py-3 font-black text-white" onClick={() => { setOverrideTargetId(chore.id); setOverrideNote(""); }} type="button">Override Missed Streak</button>
+                  )}
+                </div>
+              ) : null}              <div className="mt-3 grid gap-2 text-sm text-slate-200">
                 <p>{formatCurrency(chore.amount_cents)}</p>
                 <p>{formatRepeatSchedule(chore)}</p>
                 <p>Assigned to {childProfiles.find((child) => child.id === chore.child_id)?.name ?? "Unknown"}</p>
                 <p>{isRoutineChore(chore) ? `${streakStatus?.progressCount} of ${streakStatus?.requiredCount} check-ins complete` : isOptionalChore(chore) ? optionalState?.resetLabel : "One-time reward after approval"}</p>
               </div>
-              {latestProofImage ? (
-                <button className="mt-3 block w-full" onClick={() => onOpenLightbox(latestProofImage, `${chore.title} proof`)} type="button">
-                  <img alt={`${chore.title} proof`} className="h-40 w-full rounded-[22px] object-cover ring-1 ring-white/12" src={latestProofImage} />
-                </button>
+              {proofEntries.length > 0 ? (
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {proofEntries.map((entry) => (
+                    <button key={entry.id} className="review-photo rounded-2xl p-2 text-left" onClick={() => onOpenLightbox(entry.photo_url, `${chore.title} proof for ${entry.proof_date}`)} type="button">
+                      <img alt={`${chore.title} proof for ${entry.proof_date}`} className="h-32 w-full rounded-xl object-cover" src={entry.photo_url} />
+                      <p className="mt-2 text-xs font-bold uppercase tracking-[0.18em] text-slate-500">{entry.label ?? "Proof"}</p>
+                      <p className="text-xs text-slate-600">Uploaded {entry.uploaded_at ? formatReadableDateTime(entry.uploaded_at) : "time unavailable"}</p>
+                    </button>
+                  ))}
+                </div>
               ) : null}
               {chore.rejection_note ? <p className="mt-3 rounded-2xl bg-rose-50/90 px-3 py-2 text-sm text-rose-800">{chore.rejection_note}</p> : null}
               <div className="mt-4 flex flex-col gap-2 sm:flex-row">

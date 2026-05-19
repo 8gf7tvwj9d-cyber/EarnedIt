@@ -48,3 +48,17 @@ export function formatDateInput(date: string | null) {
 
   return date.slice(0, 10);
 }
+
+export function formatReadableDateTime(date: string | null | undefined) {
+  if (!date) {
+    return "Time unavailable";
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(date));
+}

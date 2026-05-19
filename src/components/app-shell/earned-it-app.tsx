@@ -14,6 +14,7 @@ import {
   getCurrentUser,
   pullSharedAppDataSnapshot,
   markBalancePaid,
+  overrideMissedStreak,
   rejectChore,
   resetAppData,
   saveChore,
@@ -36,7 +37,7 @@ type RoutineSaveResult = {
   appData: AppData;
 };
 
-export function ChorePayApp() {
+export function EarnedItApp() {
   const [appData, setAppData] = useState<AppData>(() => cloneBundledDemoData());
   const [hasLoadedStoredData, setHasLoadedStoredData] = useState(false);
   const [storageMode, setStorageMode] = useState<"local" | "supabase">("local");
@@ -380,6 +381,12 @@ export function ChorePayApp() {
                   pushToast("Chore deleted");
                 });
               }}
+              onOverrideMissedStreak={(choreId, missedDate, note) => {
+                void enqueueMutation(async (snapshot) => {
+                  await syncAppData(overrideMissedStreak(snapshot, choreId, missedDate, note, currentUser));
+                  pushToast("Missed streak excused");
+                });
+              }}
               onMarkPaid={(childId, notes, paymentItems?: PaymentLineItem[]) => {
                 void enqueueMutation(async (snapshot) => {
                   const before = snapshot.payouts.length;
@@ -412,14 +419,14 @@ export function ChorePayApp() {
               chores={childChores}
               currentUser={currentUser}
               payouts={childPayouts}
-              onAddRollingProof={async (choreId, photoUrl): Promise<RoutineSaveResult> => {
+              onAddRollingProof={async (choreId, photos): Promise<RoutineSaveResult> => {
                 let result: RoutineSaveResult = {
                   ok: false,
                   message: "Could not save check-in.",
                   appData: latestAppDataRef.current,
                 };
                 await enqueueMutation(async (snapshot) => {
-                  result = saveRoutineCheckIn(snapshot, choreId, photoUrl) as RoutineSaveResult;
+                  result = saveRoutineCheckIn(snapshot, choreId, photos) as RoutineSaveResult;
                   if (result.ok) {
                     await syncAppData(result.appData);
                     pushToast(result.message);
@@ -427,9 +434,9 @@ export function ChorePayApp() {
                 });
                 return result;
               }}
-              onSubmitChore={(choreId, photoUrl) => {
+              onSubmitChore={(choreId, photos) => {
                 void enqueueMutation(async (snapshot) => {
-                  await syncAppData(submitChore(snapshot, choreId, photoUrl));
+                  await syncAppData(submitChore(snapshot, choreId, photos));
                   pushToast("Chore submitted for review");
                 });
               }}
@@ -503,3 +510,4 @@ function FeatureCard({
     </div>
   );
 }
+

@@ -7,7 +7,7 @@ import { GrowthTreeCard } from "@/components/growth-tree/growth-tree-card";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { StatusBadge } from "@/components/status-badge";
 import { AppIcon, getChoreIcon } from "@/components/ui-icons";
-import { formatCurrency, formatDate, formatShortDateTime } from "@/lib/format";
+import { formatCurrency, formatDate, formatReadableDateTime, formatShortDateTime } from "@/lib/format";
 import { compressProofPhoto } from "@/lib/photo";
 import {
   formatRepeatSchedule,
@@ -22,7 +22,7 @@ import {
   isOptionalChore,
   isRoutineChore,
 } from "@/lib/chore-helpers";
-import { CheckIn, Chore, ChildProfile, Payout, User } from "@/types/app";
+import { CheckIn, Chore, ChildProfile, Payout, ProofPhotoInput, User } from "@/types/app";
 import { defaultTreeProgress, getTreeProgress } from "@/lib/growth-tree/tree-progress";
 
 type ChildDashboardProps = {
@@ -31,11 +31,11 @@ type ChildDashboardProps = {
   chores: Chore[];
   checkIns: CheckIn[];
   payouts: Payout[];
-  onAddRollingProof: (choreId: string, photoUrl: string) => Promise<{
+  onAddRollingProof: (choreId: string, photos: ProofPhotoInput[]) => Promise<{
     ok: boolean;
     message: string;
   }>;
-  onSubmitChore: (choreId: string, photoUrl: string | null) => void;
+  onSubmitChore: (choreId: string, photos: ProofPhotoInput[]) => void;
   onSubmitRollingChore: (choreId: string) => void;
 };
 
@@ -61,7 +61,7 @@ export function ChildDashboard({
 }: ChildDashboardProps) {
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const previousTreeXpRef = useRef<number | null>(null);
-  const [photoDrafts, setPhotoDrafts] = useState<Record<string, string | null>>({});
+  const [photoDrafts, setPhotoDrafts] = useState<Record<string, ProofPhotoInput[]>>({});
   const [messages, setMessages] = useState<Record<string, string | null>>({});
   const [photoPreparing, setPhotoPreparing] = useState<Record<string, boolean>>({});
   const [routineSaving, setRoutineSaving] = useState<Record<string, boolean>>({});
@@ -173,25 +173,50 @@ export function ChildDashboard({
     fileInputRefs.current[choreId] = node;
   }
 
-  async function handlePhotoSelect(choreId: string, file: File | null) {
-    if (!file) {
+  function getNextPhotoLabel(existingCount: number) {
+    if (existingCount === 0) {
+      return "Before" as const;
+    }
+
+    if (existingCount === 1) {
+      return "After" as const;
+    }
+
+    return "Extra" as const;
+  }
+
+  async function handlePhotoSelect(choreId: string, files: FileList | null) {
+    const selectedFiles = Array.from(files ?? []);
+    if (selectedFiles.length === 0) {
       return;
     }
 
     setPhotoPreparing((current) => ({ ...current, [choreId]: true }));
-    setMessage(choreId, "Preparing photo...");
+    setMessage(choreId, selectedFiles.length > 1 ? "Preparing photos..." : "Preparing photo...");
 
     try {
-      const result = await compressProofPhoto(file);
+      const existingDrafts = photoDrafts[choreId] ?? [];
+      const preparedPhotos = await Promise.all(
+        selectedFiles.map(async (file, index) => ({
+          photo_url: await compressProofPhoto(file),
+          uploaded_at: new Date().toISOString(),
+          label: getNextPhotoLabel(existingDrafts.length + index),
+        })),
+      );
       const chore = chores.find((entry) => entry.id === choreId);
 
-      if (chore && isRoutineChore(chore)) {
-        setPhotoDrafts((current) => ({ ...current, [choreId]: result }));
-        setMessage(choreId, "Photo added. Confirm today's check-in.");
-      } else {
-        setPhotoDrafts((current) => ({ ...current, [choreId]: result }));
-        setMessage(choreId, "Photo attached");
-      }
+      setPhotoDrafts((current) => ({
+        ...current,
+        [choreId]: [...(current[choreId] ?? []), ...preparedPhotos],
+      }));
+      setMessage(
+        choreId,
+        chore && isRoutineChore(chore)
+          ? "Photo added. Confirm today's check-in."
+          : preparedPhotos.length > 1
+            ? "Photos attached"
+            : "Photo attached",
+      );
     } catch {
       setMessage(choreId, "That photo did not load. Please try again.");
     } finally {
@@ -199,14 +224,21 @@ export function ChildDashboard({
     }
   }
 
+  function removePhotoDraft(choreId: string, index: number) {
+    setPhotoDrafts((current) => ({
+      ...current,
+      [choreId]: (current[choreId] ?? []).filter((_, photoIndex) => photoIndex !== index),
+    }));
+  }
   function handleStandardSubmit(chore: Chore) {
-    const photoUrl = photoDrafts[chore.id];
-    if (!photoUrl) {
-      setMessage(chore.id, "Please take a photo before submitting this chore.");
+    const photos = photoDrafts[chore.id] ?? [];
+    if (photos.length === 0) {
+      setMessage(chore.id, "Please add a photo before submitting this chore.");
       return;
     }
 
-    onSubmitChore(chore.id, photoUrl);
+    onSubmitChore(chore.id, photos);
+    setPhotoDrafts((current) => ({ ...current, [chore.id]: [] }));
     setMessage(chore.id, null);
   }
 
@@ -238,28 +270,27 @@ export function ChildDashboard({
   }
 
   async function handleRoutineProof(chore: Chore) {
-    const photoUrl = photoDrafts[chore.id];
-    if (!photoUrl) {
-      setMessage(chore.id, "Please take a photo before confirming this check-in.");
+    const photos = photoDrafts[chore.id] ?? [];
+    if (photos.length === 0) {
+      setMessage(chore.id, "Please add a photo before confirming this check-in.");
       return;
     }
 
     console.log("[Earned] Confirm today check-in clicked", { choreId: chore.id });
     setRoutineSaving((current) => ({ ...current, [chore.id]: true }));
     try {
-      const result = await onAddRollingProof(chore.id, photoUrl);
+      const result = await onAddRollingProof(chore.id, photos);
       if (!result.ok) {
         setMessage(chore.id, result.message);
         return;
       }
 
-      setPhotoDrafts((current) => ({ ...current, [chore.id]: null }));
+      setPhotoDrafts((current) => ({ ...current, [chore.id]: [] }));
       setMessage(chore.id, result.message);
     } finally {
       setRoutineSaving((current) => ({ ...current, [chore.id]: false }));
     }
   }
-
   return (
     <div className="space-y-6">
       <section className="tree-progress-panel rounded-[32px] p-5 text-white sm:p-6">
@@ -336,10 +367,11 @@ export function ChildDashboard({
                   message={messages[chore.id] ?? null}
                   onOpenCamera={openCamera}
                   onPhotoSelect={handlePhotoSelect}
+                  onRemovePhotoDraft={removePhotoDraft}
                   onRegisterFileInput={registerFileInput}
                   onRoutineSubmit={handleRoutineSubmit}
                   onStandardSubmit={handleStandardSubmit}
-                  photoDraft={photoDrafts[chore.id] ?? null}
+                  photoDrafts={photoDrafts[chore.id] ?? []}
                   isPhotoPreparing={photoPreparing[chore.id] ?? false}
                   chores={chores}
                   checkIns={checkIns}
@@ -455,7 +487,7 @@ export function ChildDashboard({
 
 function ChildChoreCard({
   chore,
-  photoDraft,
+  photoDrafts,
   message,
   chores,
   checkIns,
@@ -465,12 +497,13 @@ function ChildChoreCard({
   onOpenCamera,
   onOpenLightbox,
   onPhotoSelect,
+  onRemovePhotoDraft,
   onRoutineProof,
   onRoutineSubmit,
   onStandardSubmit,
 }: {
   chore: Chore;
-  photoDraft: string | null;
+  photoDrafts: ProofPhotoInput[];
   message: string | null;
   chores: Chore[];
   checkIns: CheckIn[];
@@ -479,7 +512,8 @@ function ChildChoreCard({
   onRegisterFileInput: (choreId: string, node: HTMLInputElement | null) => void;
   onOpenCamera: (choreId: string) => void;
   onOpenLightbox: (src: string, alt: string) => void;
-  onPhotoSelect: (choreId: string, file: File | null) => Promise<void>;
+  onPhotoSelect: (choreId: string, files: FileList | null) => Promise<void>;
+  onRemovePhotoDraft: (choreId: string, index: number) => void;
   onRoutineProof: (chore: Chore) => void;
   onRoutineSubmit: (chore: Chore) => void;
   onStandardSubmit: (chore: Chore) => void;
@@ -559,10 +593,23 @@ function ChildChoreCard({
         <p>{isOptionalChore(chore) ? optionalState?.helperLabel : isRoutineChore(chore) ? `${streakStatus?.progressCount} of ${streakStatus?.requiredCount} check-ins complete` : "Submit once complete"}</p>
       </div>
 
-      {photoDraft ? (
-        <button className="mt-3 block w-full" onClick={() => onOpenLightbox(photoDraft, `${chore.title} preview`)} type="button">
-          <img alt={`${chore.title} preview`} className="h-44 w-full rounded-[22px] object-cover ring-2 ring-white/16" src={photoDraft} />
-        </button>
+      {photoDrafts.length > 0 ? (
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          {photoDrafts.map((photo, index) => (
+            <div key={`${photo.uploaded_at}-${index}`} className="rounded-[20px] bg-white/10 p-2">
+              <button className="block w-full" onClick={() => onOpenLightbox(photo.photo_url, `${chore.title} ${photo.label ?? "proof"} preview`)} type="button">
+                <img alt={`${chore.title} ${photo.label ?? "proof"} preview`} className="h-32 w-full rounded-2xl object-cover ring-2 ring-white/16" src={photo.photo_url} />
+              </button>
+              <div className="mt-2 flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.16em] text-lime-100">{photo.label ?? "Extra"}</p>
+                  <p className="text-xs text-slate-200">Uploaded {formatReadableDateTime(photo.uploaded_at)}</p>
+                </div>
+                <button className="rounded-full bg-white/12 px-3 py-1 text-xs font-black text-white" onClick={() => onRemovePhotoDraft(chore.id, index)} type="button">Remove</button>
+              </div>
+            </div>
+          ))}
+        </div>
       ) : isRoutineChore(chore) && latestProofImage ? (
         <button className="mt-3 block w-full" onClick={() => onOpenLightbox(latestProofImage, `${chore.title} proof`)} type="button">
           <img alt={`${chore.title} proof`} className="h-44 w-full rounded-[22px] object-cover ring-2 ring-white/16" src={latestProofImage} />
@@ -572,7 +619,6 @@ function ChildChoreCard({
           <img alt={`${chore.title} proof`} className="h-44 w-full rounded-[22px] object-cover ring-2 ring-white/16" src={proofEntries[proofEntries.length - 1]?.photo_url ?? proofEntries[0].photo_url} />
         </button>
       ) : null}
-
       <input
         ref={(node) => {
           onRegisterFileInput(chore.id, node);
@@ -580,23 +626,24 @@ function ChildChoreCard({
         accept="image/*"
         capture="environment"
         className="hidden"
+        multiple
         type="file"
         onChange={(event) => {
-          void onPhotoSelect(chore.id, event.target.files?.[0] ?? null);
+          void onPhotoSelect(chore.id, event.target.files);
           event.currentTarget.value = "";
         }}
       />
 
       <div className="mt-4 space-y-2">
-        <button className={`action-button w-full rounded-2xl px-4 py-4 text-base font-black shadow-lg shadow-orange-950/10 ${brokenStreak ? "cursor-not-allowed bg-slate-500/80 text-white" : "bg-gradient-to-r from-[#ffd27d] to-[#ffae84] text-slate-950"}`} disabled={isPhotoPreparing || isRoutineSaving || (isRoutineChore(chore) && !canCheckInToday && !photoDraft)} onClick={() => onOpenCamera(chore.id)} type="button">
-          {isPhotoPreparing ? "Preparing..." : brokenStreak ? "Streak broken" : isRoutineChore(chore) && todayPhotoExists ? "Retake photo" : "Take photo"}
+        <button className={`action-button w-full rounded-2xl px-4 py-4 text-base font-black shadow-lg shadow-orange-950/10 ${brokenStreak ? "cursor-not-allowed bg-slate-500/80 text-white" : "bg-gradient-to-r from-[#ffd27d] to-[#ffae84] text-slate-950"}`} disabled={isPhotoPreparing || isRoutineSaving || (isRoutineChore(chore) && !canCheckInToday && photoDrafts.length === 0)} onClick={() => onOpenCamera(chore.id)} type="button">
+          {isPhotoPreparing ? "Preparing..." : brokenStreak ? "Streak broken" : isRoutineChore(chore) && todayPhotoExists ? "Add another photo" : "Add photo"}
         </button>
 
-        {isRoutineChore(chore) && photoDraft ? <div className="rounded-[18px] bg-white px-3 py-2 text-sm font-bold text-slate-800">Photo added. Confirm today&apos;s check-in.</div> : null}
+        {isRoutineChore(chore) && photoDrafts.length > 0 ? <div className="rounded-[18px] bg-white px-3 py-2 text-sm font-bold text-slate-800">Photo added. Confirm today&apos;s check-in.</div> : null}
 
         {isRoutineChore(chore) ? (
           <>
-            <button className={`action-button w-full rounded-2xl px-4 py-4 text-base font-black ${photoDraft && !isPhotoPreparing && !isRoutineSaving ? "bg-gradient-to-r from-[#6f9a52] to-[#d4ad4f] text-slate-950" : "hero-button-secondary text-slate-200"}`} disabled={!photoDraft || isPhotoPreparing || isRoutineSaving} onClick={() => void onRoutineProof(chore)} type="button">
+            <button className={`action-button w-full rounded-2xl px-4 py-4 text-base font-black ${photoDrafts.length > 0 && !isPhotoPreparing && !isRoutineSaving ? "bg-gradient-to-r from-[#6f9a52] to-[#d4ad4f] text-slate-950" : "hero-button-secondary text-slate-200"}`} disabled={photoDrafts.length === 0 || isPhotoPreparing || isRoutineSaving} onClick={() => void onRoutineProof(chore)} type="button">
               {isRoutineSaving ? "Saving..." : "Check in"}
             </button>
             <button className={`action-button w-full rounded-2xl px-4 py-4 text-base font-black ${brokenStreak ? "cursor-not-allowed bg-slate-500/80 text-white" : routineProgress?.isEligible ? "hero-button-primary" : "hero-button-secondary text-slate-200"}`} disabled={brokenStreak} onClick={() => onRoutineSubmit(chore)} type="button">
@@ -605,7 +652,7 @@ function ChildChoreCard({
             {brokenStreak && streakStatus?.missedDate ? <p className="text-center text-xs font-bold uppercase tracking-[0.18em] text-rose-200">Streak broken. Missed {formatDate(streakStatus.missedDate)}. Restarts {streakStatus.nextRestartDate ? formatDate(streakStatus.nextRestartDate) : "next cycle"}.</p> : todayPhotoExists ? <p className="text-center text-xs font-bold uppercase tracking-[0.18em] text-lime-100">Today&apos;s proof is already saved</p> : canCheckInToday ? <p className="text-center text-xs font-bold uppercase tracking-[0.18em] text-slate-300">Take a photo to save today&apos;s check-in</p> : <p className="text-center text-xs font-bold uppercase tracking-[0.18em] text-slate-300">Today is not an active required check-in day</p>}
           </>
         ) : (
-          <button className={`action-button w-full rounded-2xl px-4 py-4 text-base font-black ${photoDraft && !isPhotoPreparing ? "bg-gradient-to-r from-[#6f9a52] to-[#d4ad4f] text-slate-950" : "hero-button-secondary text-slate-200"}`} disabled={!photoDraft || isPhotoPreparing} onClick={() => onStandardSubmit(chore)} type="button">
+          <button className={`action-button w-full rounded-2xl px-4 py-4 text-base font-black ${photoDrafts.length > 0 && !isPhotoPreparing ? "bg-gradient-to-r from-[#6f9a52] to-[#d4ad4f] text-slate-950" : "hero-button-secondary text-slate-200"}`} disabled={photoDrafts.length === 0 || isPhotoPreparing} onClick={() => onStandardSubmit(chore)} type="button">
             {isOptionalChore(chore) ? "Submit repeating chore" : "Submit chore"}
           </button>
         )}
@@ -634,7 +681,6 @@ function ReadOnlyChoreCard({
     : null;
   const brokenStreak = Boolean(streakStatus?.isBroken);
   const proofEntries = getProofEntries(chore, checkIns);
-  const latestProofImage = proofEntries[proofEntries.length - 1]?.photo_url ?? null;
   const progressPercent = routineProgress?.progressPercent ?? 0;
 
   return (
@@ -681,10 +727,16 @@ function ReadOnlyChoreCard({
         <p>{formatCurrency(chore.amount_cents)}</p>
         <p>{routineProgress ? `${streakStatus?.progressCount} of ${streakStatus?.requiredCount} check-ins complete` : getChoreKindLabel(chore)}</p>
       </div>
-      {latestProofImage ? (
-        <button className="mt-3 block w-full" onClick={() => onOpenLightbox(latestProofImage, `${chore.title} proof`)} type="button">
-          <img alt={`${chore.title} proof`} className="h-44 w-full rounded-[22px] object-cover ring-2 ring-white/16" src={latestProofImage} />
-        </button>
+      {proofEntries.length > 0 ? (
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          {proofEntries.map((entry) => (
+            <button key={entry.id} className="rounded-[20px] bg-white/10 p-2 text-left" onClick={() => onOpenLightbox(entry.photo_url, `${chore.title} proof`)} type="button">
+              <img alt={`${chore.title} proof`} className="h-32 w-full rounded-2xl object-cover ring-2 ring-white/16" src={entry.photo_url} />
+              <p className="mt-2 text-xs font-black uppercase tracking-[0.16em] text-lime-100">{entry.label ?? "Proof"}</p>
+              <p className="text-xs text-slate-200">Uploaded {entry.uploaded_at ? formatReadableDateTime(entry.uploaded_at) : "time unavailable"}</p>
+            </button>
+          ))}
+        </div>
       ) : null}
     </article>
   );

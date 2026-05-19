@@ -1,8 +1,8 @@
-# ChorePay Deployment Checklist (Vercel)
+# EarnedIt Deployment Checklist (Vercel)
 
 ## Local Pre-Deploy Commands
 
-Run from `C:\Users\blief\Desktop\chore app\chorepay`:
+Run from `C:\Users\blief\Desktop\EarnedIt`:
 
 ```bash
 npm install
@@ -20,7 +20,7 @@ Expected current status:
 
 1. Push the latest branch to GitHub.
 2. In Vercel, click **Add New... -> Project** and import the GitHub repo.
-3. Set **Root Directory** to `chorepay`.
+3. Leave **Root Directory** blank when deploying this repo directly.
 4. Framework preset should auto-detect as **Next.js**.
 5. Build command: `npm run build`.
 6. Install command: `npm install`.
@@ -65,3 +65,4 @@ Current persistence mode:
    - mark payout paid
 5. Refresh browser and confirm local state is preserved on the same device/profile.
 6. Check Vercel function/runtime logs for unexpected errors after first use.
+

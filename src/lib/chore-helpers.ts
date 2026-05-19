@@ -268,19 +268,57 @@ export function formatRepeatSchedule(chore: Chore) {
 }
 
 export function getProofEntries(chore: Chore, checkIns: CheckIn[] = []): ChoreProofEntry[] {
-  const derivedEntries = getNormalizedCheckInsForChore(chore, checkIns).map((entry) => ({
-    id: entry.id,
-    proof_date: entry.check_in_date,
-    photo_url: entry.photo_url,
-    submitted_at: entry.submitted_at,
-  }));
+  const expandEntryPhotos = (entry: ChoreProofEntry): ChoreProofEntry[] => {
+    if (entry.photos?.length) {
+      return entry.photos.map((photo) => ({
+        id: photo.id,
+        proof_date: entry.proof_date,
+        photo_url: photo.photo_url,
+        submitted_at: entry.submitted_at,
+        uploaded_at: photo.uploaded_at ?? entry.uploaded_at ?? entry.submitted_at,
+        label: photo.label ?? entry.label ?? null,
+        photos: [photo],
+      }));
+    }
+
+    return [
+      {
+        ...entry,
+        uploaded_at: entry.uploaded_at ?? entry.submitted_at,
+        label: entry.label ?? null,
+      },
+    ];
+  };
+
+  const derivedEntries = getNormalizedCheckInsForChore(chore, checkIns).flatMap((entry) => {
+    const photos = entry.photos?.length
+      ? entry.photos
+      : [
+          {
+            id: `${entry.id}-photo`,
+            photo_url: entry.photo_url,
+            uploaded_at: entry.uploaded_at ?? entry.submitted_at,
+            label: null,
+          },
+        ];
+
+    return photos.map((photo) => ({
+      id: photo.id,
+      proof_date: entry.check_in_date,
+      photo_url: photo.photo_url,
+      submitted_at: entry.submitted_at,
+      uploaded_at: photo.uploaded_at ?? entry.uploaded_at ?? entry.submitted_at,
+      label: photo.label ?? null,
+      photos: [photo],
+    }));
+  });
 
   if (derivedEntries.length > 0) {
     return derivedEntries;
   }
 
   if (chore.proof_entries.length > 0) {
-    return chore.proof_entries;
+    return chore.proof_entries.flatMap(expandEntryPhotos);
   }
 
   if (!chore.photo_url) {
@@ -293,10 +331,19 @@ export function getProofEntries(chore: Chore, checkIns: CheckIn[] = []): ChorePr
       proof_date: (chore.submitted_at ?? chore.updated_at).slice(0, 10),
       photo_url: chore.photo_url,
       submitted_at: chore.submitted_at ?? chore.updated_at,
+      uploaded_at: chore.submitted_at ?? chore.updated_at,
+      label: null,
     },
   ];
 }
 
+export function getStreakOverrideForDate(chore: Chore, missedDate: string | null | undefined) {
+  if (!missedDate) {
+    return null;
+  }
+
+  return (chore.streak_overrides ?? []).find((entry) => entry.missed_date === missedDate) ?? null;
+}
 export function getProofDateCandidates(entry: ChoreProofEntry) {
   const dates = new Set<string>([entry.proof_date]);
 

@@ -4,6 +4,8 @@ export type RepeatPattern = "weekly" | "biweekly";
 export type ResetFrequency = "daily" | "weekly";
 export type RoutinePayoutRule = "all_or_nothing" | "partial";
 export type RoutineMissBehavior = "fail_period" | "reset_streak";
+export type ProofPhotoLabel = "Before" | "After" | "Extra";
+export type StreakOverrideType = "excused" | "completed_late";
 export type RrcCycleType =
   | "weekly"
   | "one_week_block"
@@ -88,6 +90,7 @@ export type Chore = {
   rejection_note: string | null;
   photo_url: string | null;
   proof_entries: ChoreProofEntry[];
+  streak_overrides: RoutineStreakOverride[];
   submitted_at: string | null;
   approved_at: string | null;
   paid_at: string | null;
@@ -95,11 +98,37 @@ export type Chore = {
   updated_at: string;
 };
 
+export type ChoreProofPhoto = {
+  id: string;
+  photo_url: string;
+  uploaded_at: string | null;
+  label?: ProofPhotoLabel | null;
+};
+
 export type ChoreProofEntry = {
   id: string;
   proof_date: string;
   photo_url: string;
   submitted_at: string;
+  uploaded_at?: string | null;
+  label?: ProofPhotoLabel | null;
+  photos?: ChoreProofPhoto[];
+};
+
+export type RoutineStreakOverride = {
+  id: string;
+  missed_date: string;
+  override_at: string;
+  override_type: StreakOverrideType;
+  note: string | null;
+  parent_user_id: string | null;
+  parent_name: string | null;
+};
+
+export type ProofPhotoInput = {
+  photo_url: string;
+  uploaded_at: string;
+  label?: ProofPhotoLabel | null;
 };
 
 export type CheckIn = {
@@ -108,8 +137,10 @@ export type CheckIn = {
   parent_id: string;
   child_id: string;
   photo_url: string;
+  photos?: ChoreProofPhoto[];
   check_in_date: string;
   submitted_at: string;
+  uploaded_at?: string | null;
 };
 
 export type Payout = {
