@@ -81,6 +81,25 @@ Core tables:
 - Payouts create history and change approved chores to paid
 - Demo photo uploads are stored as local data URLs in the browser
 
+## Branch and deployment workflow
+
+Use separate branches so the working household app stays protected while larger beta work happens elsewhere.
+
+- `home-stable`: safe home-use version for the current household app. Keep this branch deployable and use it for small fixes that should go live at home.
+- `beta-multi-user`: experimental beta branch for Supabase Auth, database persistence, multi-household support, and other larger changes. Do not point the live household app at this branch.
+- `main`: integration branch for proven merged changes only.
+
+Recommended flow:
+
+1. Use `home-stable` for household fixes that need to stay reliable.
+2. Use `beta-multi-user` for risky or larger multi-user development.
+3. Merge beta work back only after it has been tested and is ready for normal use.
+
+Recommended Vercel setup:
+
+- Point the live home app's production deployment at `home-stable`.
+- Deploy `beta-multi-user` as a separate preview deployment or as a separate Vercel project/domain.
+- Keep beta environment variables separate from home-stable values, especially any future Supabase project URLs, anon keys, storage buckets, and household IDs.
 ## Suggested next steps
 
 1. Replace demo sign-in with Supabase Auth for parent and child accounts
