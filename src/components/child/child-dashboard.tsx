@@ -124,6 +124,7 @@ export function ChildDashboard({
     treeLoadFailed = true;
     console.warn("[Earned] Tree progress failed to load. Falling back to seedling.", error);
   }
+  const childDisplayName = childProfile.name === "Child" ? "Cynthia" : childProfile.name;
   const sortedPayouts = [...payouts].sort((left, right) =>
     paidHistorySortOrder === "newest"
       ? right.paid_at.localeCompare(left.paid_at)
@@ -342,7 +343,7 @@ export function ChildDashboard({
               <span className="kicker-icon"><AppIcon className="h-4 w-4" name="sprout" /></span>
               Child garden
             </div>
-            <h2 className="mt-2 font-mono text-3xl font-black">Keep growing, {childProfile.name}</h2>
+            <h2 className="mt-2 font-mono text-3xl font-black">Keep growing, {childDisplayName}</h2>
             <p className="mt-2 max-w-xl text-sm leading-6 text-slate-200">
               Complete today&apos;s chores, keep required repeating chores alive, and earn rewards as you go.
             </p>
