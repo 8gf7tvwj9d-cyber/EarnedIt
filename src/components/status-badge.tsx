@@ -11,7 +11,9 @@ const statusStyles: Record<ChoreStatus, string> = {
 
 const customStatusStyles = {
   active: "bg-[#edf6df]/96 text-[#3f6f2f] ring-[#a7c279] shadow-[0_12px_24px_rgba(95,143,67,0.14)]",
-  done_today: "bg-rose-50/96 text-rose-800 ring-rose-200 shadow-[0_12px_24px_rgba(227,85,111,0.12)]",
+  done_today: "bg-[#dff1ce]/98 text-[#285d20] ring-[#84ad57] shadow-[0_12px_24px_rgba(95,143,67,0.18)]",
+  unavailable: "bg-slate-100/96 text-slate-600 ring-slate-300 shadow-[0_12px_24px_rgba(15,23,42,0.08)]",
+  missed: "bg-amber-100/98 text-amber-950 ring-amber-300 shadow-[0_12px_24px_rgba(250,180,45,0.16)]",
   broken: "bg-rose-100/96 text-rose-900 ring-rose-300 shadow-[0_12px_24px_rgba(227,85,111,0.16)]",
 } as const;
 
@@ -26,7 +28,9 @@ const dots: Record<ChoreStatus, string> = {
 
 const customDots = {
   active: "#22c55e",
-  done_today: "#f43f5e",
+  done_today: "#10b981",
+  unavailable: "#94a3b8",
+  missed: "#f59e0b",
   broken: "#dc2626",
 } as const;
 

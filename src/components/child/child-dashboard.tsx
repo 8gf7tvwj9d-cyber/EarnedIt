@@ -17,10 +17,12 @@ import {
   getProofEntries,
   getRequiredRollingStreakStatus,
   getRoutineProgressDisplay,
+  getTodayIsoDate,
   isOptionalInstanceChore,
   isOptionalTemplateChore,
   isOptionalChore,
   isRoutineChore,
+  isChoreScheduledForDate,
 } from "@/lib/chore-helpers";
 import { CheckIn, Chore, ChildProfile, Payout, ProofPhotoInput, User } from "@/types/app";
 import { defaultTreeProgress, getTreeProgress } from "@/lib/growth-tree/tree-progress";
@@ -81,22 +83,13 @@ export function ChildDashboard({
   const [isTreeCelebrating, setIsTreeCelebrating] = useState(false);
   const [lightboxImage, setLightboxImage] = useState<{ alt: string; src: string } | null>(null);
 
-  const availableChores = chores.filter((chore) => {
+  const assignedChores = chores.filter((chore) => {
     const status = getComputedStatus(chore, checkIns);
-    if (isOptionalTemplateChore(chore)) {
-      const optionalState = getOptionalChoreState(chores, chore, undefined, checkIns);
-      return optionalState.canSubmitToday;
-    }
-
     if (isOptionalInstanceChore(chore)) {
-      return status === "rejected";
-    }
-
-    if (!(status === "available" || status === "rejected")) {
       return false;
     }
 
-    return true;
+    return status === "available" || status === "rejected" || status === "expired";
   });
   const awaitingApproval = chores.filter((chore) => {
     if (isOptionalTemplateChore(chore)) {
@@ -353,14 +346,14 @@ export function ChildDashboard({
 
           <div className="space-y-5">
             <ChildDashboardSection
-              count={`${availableChores.length} active`}
+              count={`${assignedChores.length} assigned`}
               icon="leaf"
               isOpen={openSections.available}
-              title="Available Chores"
+              title="Assigned Chores"
               onOpenChange={(next) => setSectionOpen("available", next)}
             >
-              <ChildSectionContent emptyCopy="No available chores right now.">
-              {availableChores.map((chore) => (
+              <ChildSectionContent emptyCopy="No assigned chores right now.">
+              {assignedChores.map((chore) => (
                 <ChildChoreCard
                   key={chore.id}
                   chore={chore}
@@ -532,6 +525,30 @@ function ChildChoreCard({
   const latestProofImage = proofEntries[proofEntries.length - 1]?.photo_url ?? null;
   const progressPercent = routineProgress?.progressPercent ?? 0;
   const canCheckInToday = Boolean(streakStatus?.canCheckInToday);
+  const today = getTodayIsoDate();
+  const isExpired = status === "expired";
+  const isStandardScheduledToday = isChoreScheduledForDate(chore, today);
+  const optionalCompletedThisPeriod = Boolean(
+    optionalState?.currentInstance && optionalState.currentInstance.status !== "rejected",
+  );
+  const canCompleteNow = isExpired
+    ? false
+    : isRoutineChore(chore)
+      ? canCheckInToday && !brokenStreak
+      : isOptionalChore(chore)
+        ? Boolean(optionalState?.canSubmitToday)
+        : (status === "available" || status === "rejected") && isStandardScheduledToday;
+  const badgeState = isExpired
+    ? { label: "Expired", tone: undefined }
+    : brokenStreak
+      ? { label: "Missed", tone: "missed" as const }
+      : isRoutineChore(chore) && todayPhotoExists
+        ? { label: "Done Today", tone: "done_today" as const }
+        : isOptionalChore(chore) && optionalCompletedThisPeriod
+          ? { label: "Done Today", tone: "done_today" as const }
+          : canCompleteNow
+            ? { label: "Active", tone: "active" as const }
+            : { label: "Unavailable", tone: "unavailable" as const };
 
   return (
     <article className={`child-card card-spotlight rounded-[28px] border p-4 ${brokenStreak ? "border-rose-300 bg-rose-950/35 shadow-[0_12px_28px_rgba(127,29,29,0.28)]" : "border-white/14"}`}>
@@ -550,9 +567,9 @@ function ChildChoreCard({
           </div>
         </div>
         <StatusBadge
-          label={isRoutineChore(chore) ? (brokenStreak ? "streak broken" : todayPhotoExists ? "done today" : "active") : undefined}
+          label={badgeState.label}
           status={status}
-          tone={isRoutineChore(chore) ? (brokenStreak ? "broken" : todayPhotoExists ? "done_today" : "active") : undefined}
+          tone={badgeState.tone}
         />
       </div>
 
@@ -589,7 +606,7 @@ function ChildChoreCard({
       <div className="mt-3 grid gap-2 text-sm text-slate-200 sm:grid-cols-2">
         <p>{formatCurrency(chore.amount_cents)}</p>
         <p>{formatRepeatSchedule(chore)}</p>
-        <p>{isRoutineChore(chore) ? (brokenStreak ? "Current streak failed" : "Don't miss a day") : isOptionalChore(chore) ? "Available today" : `Due ${formatDate(chore.due_date)}`}</p>
+        <p>{isRoutineChore(chore) ? (brokenStreak ? "Current streak missed" : badgeState.label) : isOptionalChore(chore) ? badgeState.label : `Due ${formatDate(chore.due_date)}`}</p>
         <p>{isOptionalChore(chore) ? optionalState?.helperLabel : isRoutineChore(chore) ? `${streakStatus?.progressCount} of ${streakStatus?.requiredCount} check-ins complete` : "Submit once complete"}</p>
       </div>
 
@@ -635,24 +652,24 @@ function ChildChoreCard({
       />
 
       <div className="mt-4 space-y-2">
-        <button className={`action-button w-full rounded-2xl px-4 py-4 text-base font-black shadow-lg shadow-orange-950/10 ${brokenStreak ? "cursor-not-allowed bg-slate-500/80 text-white" : "bg-gradient-to-r from-[#ffd27d] to-[#ffae84] text-slate-950"}`} disabled={isPhotoPreparing || isRoutineSaving || (isRoutineChore(chore) && !canCheckInToday && photoDrafts.length === 0)} onClick={() => onOpenCamera(chore.id)} type="button">
-          {isPhotoPreparing ? "Preparing..." : brokenStreak ? "Streak broken" : isRoutineChore(chore) && todayPhotoExists ? "Add another photo" : "Add photo"}
+        <button className={`action-button w-full rounded-2xl px-4 py-4 text-base font-black shadow-lg shadow-orange-950/10 ${brokenStreak ? "cursor-not-allowed bg-slate-500/80 text-white" : "bg-gradient-to-r from-[#ffd27d] to-[#ffae84] text-slate-950"}`} disabled={isPhotoPreparing || isRoutineSaving || !canCompleteNow} onClick={() => onOpenCamera(chore.id)} type="button">
+          {isPhotoPreparing ? "Preparing..." : brokenStreak ? "Streak broken" : canCompleteNow ? "Add photo" : badgeState.label}
         </button>
 
         {isRoutineChore(chore) && photoDrafts.length > 0 ? <div className="rounded-[18px] bg-white px-3 py-2 text-sm font-bold text-slate-800">Photo added. Confirm today&apos;s check-in.</div> : null}
 
         {isRoutineChore(chore) ? (
           <>
-            <button className={`action-button w-full rounded-2xl px-4 py-4 text-base font-black ${photoDrafts.length > 0 && !isPhotoPreparing && !isRoutineSaving ? "bg-gradient-to-r from-[#6f9a52] to-[#d4ad4f] text-slate-950" : "hero-button-secondary text-slate-200"}`} disabled={photoDrafts.length === 0 || isPhotoPreparing || isRoutineSaving} onClick={() => void onRoutineProof(chore)} type="button">
+            <button className={`action-button w-full rounded-2xl px-4 py-4 text-base font-black ${photoDrafts.length > 0 && !isPhotoPreparing && !isRoutineSaving ? "bg-gradient-to-r from-[#6f9a52] to-[#d4ad4f] text-slate-950" : "hero-button-secondary text-slate-200"}`} disabled={photoDrafts.length === 0 || !canCompleteNow || isPhotoPreparing || isRoutineSaving} onClick={() => void onRoutineProof(chore)} type="button">
               {isRoutineSaving ? "Saving..." : "Check in"}
             </button>
             <button className={`action-button w-full rounded-2xl px-4 py-4 text-base font-black ${brokenStreak ? "cursor-not-allowed bg-slate-500/80 text-white" : routineProgress?.isEligible ? "hero-button-primary" : "hero-button-secondary text-slate-200"}`} disabled={brokenStreak} onClick={() => onRoutineSubmit(chore)} type="button">
               {brokenStreak ? "Streak failed" : "Submit repeating chore for approval"}
             </button>
-            {brokenStreak && streakStatus?.missedDate ? <p className="text-center text-xs font-bold uppercase tracking-[0.18em] text-rose-200">Streak broken. Missed {formatDate(streakStatus.missedDate)}. Restarts {streakStatus.nextRestartDate ? formatDate(streakStatus.nextRestartDate) : "next cycle"}.</p> : todayPhotoExists ? <p className="text-center text-xs font-bold uppercase tracking-[0.18em] text-lime-100">Today&apos;s proof is already saved</p> : canCheckInToday ? <p className="text-center text-xs font-bold uppercase tracking-[0.18em] text-slate-300">Take a photo to save today&apos;s check-in</p> : <p className="text-center text-xs font-bold uppercase tracking-[0.18em] text-slate-300">Today is not an active required check-in day</p>}
+            {brokenStreak && streakStatus?.missedDate ? <p className="text-center text-xs font-bold uppercase tracking-[0.18em] text-rose-200">Streak broken. Missed {formatDate(streakStatus.missedDate)}. Restarts {streakStatus.nextRestartDate ? formatDate(streakStatus.nextRestartDate) : "next cycle"}.</p> : todayPhotoExists ? <p className="text-center text-xs font-bold uppercase tracking-[0.18em] text-lime-100">Today&apos;s proof is already saved</p> : canCompleteNow ? <p className="text-center text-xs font-bold uppercase tracking-[0.18em] text-slate-300">Take a photo to save today&apos;s check-in</p> : <p className="text-center text-xs font-bold uppercase tracking-[0.18em] text-slate-300">This chore is unavailable today</p>}
           </>
         ) : (
-          <button className={`action-button w-full rounded-2xl px-4 py-4 text-base font-black ${photoDrafts.length > 0 && !isPhotoPreparing ? "bg-gradient-to-r from-[#6f9a52] to-[#d4ad4f] text-slate-950" : "hero-button-secondary text-slate-200"}`} disabled={photoDrafts.length === 0 || isPhotoPreparing} onClick={() => onStandardSubmit(chore)} type="button">
+          <button className={`action-button w-full rounded-2xl px-4 py-4 text-base font-black ${photoDrafts.length > 0 && !isPhotoPreparing ? "bg-gradient-to-r from-[#6f9a52] to-[#d4ad4f] text-slate-950" : "hero-button-secondary text-slate-200"}`} disabled={photoDrafts.length === 0 || !canCompleteNow || isPhotoPreparing} onClick={() => onStandardSubmit(chore)} type="button">
             {isOptionalChore(chore) ? "Submit repeating chore" : "Submit chore"}
           </button>
         )}

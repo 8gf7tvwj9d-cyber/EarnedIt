@@ -787,6 +787,31 @@ export async function pullSharedAppDataSnapshot(
   }
 }
 
+
+export function clearCompletedTestData(appData: AppData): AppData {
+  const timestamp = new Date().toISOString();
+  const resetChore = (chore: Chore): Chore => ({
+    ...chore,
+    status: "available",
+    rejection_note: null,
+    photo_url: null,
+    proof_entries: [],
+    streak_overrides: [],
+    submitted_at: null,
+    approved_at: null,
+    paid_at: null,
+    updated_at: timestamp,
+  });
+
+  return {
+    ...appData,
+    chores: appData.chores
+      .filter((chore) => !(isOptionalChore(chore) && !chore.is_template && chore.template_chore_id))
+      .map(resetChore),
+    checkIns: [],
+    payouts: [],
+  };
+}
 export function resetAppData() {
   const fresh = getNormalizedDemoData();
   writeAppData(fresh);
@@ -979,7 +1004,28 @@ export function submitChore(
   ) {
     const existingInstance = getOptionalInstanceForPeriod(appData.chores, selectedChore, today);
     if (existingInstance) {
-      return appData;
+      if (existingInstance.status !== "rejected") {
+        return appData;
+      }
+
+      return {
+        ...appData,
+        chores: appData.chores.map<Chore>((chore) =>
+          chore.id === existingInstance.id
+            ? {
+                ...chore,
+                status: "submitted",
+                photo_url: primaryPhotoUrl,
+                proof_entries: proofEntries,
+                rejection_note: null,
+                submitted_at: timestamp,
+                approved_at: null,
+                paid_at: null,
+                updated_at: timestamp,
+              }
+            : chore,
+        ),
+      };
     }
 
     const newInstance: Chore = {

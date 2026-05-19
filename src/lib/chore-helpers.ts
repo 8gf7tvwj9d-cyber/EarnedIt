@@ -207,19 +207,22 @@ export function getOptionalChoreState(
     : [];
   const completionCount = currentEntries.length;
   const remainingCompletions = currentInstance ? 0 : template.max_completions_per_reset || 1;
+  const currentInstanceAllowsResubmit = currentInstance?.status === "rejected";
   const canSubmitToday = Boolean(
     scheduledToday &&
       (isOptionalTemplateChore(chore)
-        ? !template.manual_availability && !currentInstance
+        ? !template.manual_availability && (!currentInstance || currentInstanceAllowsResubmit)
         : chore.status === "available" || chore.status === "rejected"),
   );
-  const helperLabel = currentInstance
-    ? currentInstance.status === "rejected"
-      ? "Needs another photo before resubmitting"
-      : `Submitted for ${template.reset_frequency === "daily" ? "today" : "this period"}`
-    : template.manual_availability
-      ? "Parent needs to make this available"
-      : `Can be done once ${template.reset_frequency === "daily" ? "today" : "this period"}`;
+  const helperLabel = !scheduledToday
+    ? "Unavailable today"
+    : currentInstance
+      ? currentInstance.status === "rejected"
+        ? "Needs another photo before resubmitting"
+        : `Already submitted for ${template.reset_frequency === "daily" ? "today" : "this period"}`
+      : template.manual_availability
+        ? "Parent needs to make this available"
+        : `Can be done once ${template.reset_frequency === "daily" ? "today" : "this period"}`;
 
   return {
     scheduledToday,

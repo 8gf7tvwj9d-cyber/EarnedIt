@@ -8,6 +8,7 @@ import { ParentDashboard } from "@/components/parent/parent-dashboard";
 import { AppIcon } from "@/components/ui-icons";
 import {
   approveChore,
+  clearCompletedTestData,
   commitSharedAppData,
   deleteChore,
   getChildProfileForUser,
@@ -379,6 +380,13 @@ export function EarnedItApp() {
                 void enqueueMutation(async (snapshot) => {
                   await syncAppData(deleteChore(snapshot, choreId));
                   pushToast("Chore deleted");
+                });
+              }}
+              onClearCompletedTestData={() => {
+                void enqueueMutation(async (snapshot) => {
+                  const next = clearCompletedTestData(snapshot);
+                  await syncAppData(next);
+                  pushToast("Test progress cleared");
                 });
               }}
               onOverrideMissedStreak={(choreId, missedDate, note) => {

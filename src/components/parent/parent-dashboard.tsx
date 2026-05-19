@@ -53,6 +53,7 @@ type ParentDashboardProps = {
   onDeleteChore: (choreId: string) => void;
   onApprove: (choreId: string) => void;
   onReject: (choreId: string, note: string) => void;
+  onClearCompletedTestData: () => void;
   onOverrideMissedStreak: (choreId: string, missedDate: string, note: string) => void;
   onMarkPaid: (childId: string, notes: string, paymentItems?: PaymentLineItem[]) => void;
 };
@@ -101,6 +102,7 @@ export function ParentDashboard({
   onDeleteChore,
   onApprove,
   onReject,
+  onClearCompletedTestData,
   onOverrideMissedStreak,
   onMarkPaid,
 }: ParentDashboardProps) {
@@ -115,6 +117,7 @@ export function ParentDashboard({
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectionNote, setRejectionNote] = useState("");
   const [payoutNotes, setPayoutNotes] = useState("");
+  const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => {
     if (typeof window === "undefined") {
       return getDefaultParentSections();
@@ -152,6 +155,19 @@ export function ParentDashboard({
       !isOptionalTemplateChore(chore) && getComputedStatus(chore, checkIns) === "expired",
   );
   const totalUnpaidBalance = approvedCompleted.reduce((sum, chore) => sum + chore.amount_cents, 0);
+  const clearableProgressCount =
+    checkIns.length +
+    payouts.length +
+    chores.filter(
+      (chore) =>
+        isOptionalInstanceChore(chore) ||
+        chore.proof_entries.length > 0 ||
+        chore.streak_overrides.length > 0,
+    ).length +
+    awaitingApproval.length +
+    approvedCompleted.length +
+    paidChores.length +
+    missedExpired.length;
   const recentPayouts = [...payouts]
     .sort((left, right) => right.paid_at.localeCompare(left.paid_at))
     .slice(0, 3);
@@ -489,6 +505,29 @@ export function ParentDashboard({
             />
 
             <div className="space-y-4">
+              <div className="rounded-[24px] border border-amber-200/35 bg-white/10 p-4 text-white">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-black uppercase tracking-[0.16em] text-amber-100">Test data reset</p>
+                    <p className="mt-1 text-sm leading-6 text-slate-200">
+                      Clear completions, approvals, paid history, photos, check-ins, and missed-streak overrides while keeping users and chore setup.
+                    </p>
+                  </div>
+                  <span className="label-chip label-chip-light">{clearableProgressCount} records</span>
+                </div>
+                {isResetConfirmOpen ? (
+                  <div className="mt-3 rounded-[20px] bg-amber-50 px-3 py-3 text-sm text-amber-950">
+                    <p className="font-black">Clear testing progress?</p>
+                    <p className="mt-1">This keeps chore definitions and account setup, but removes completion/payment history.</p>
+                    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                      <button className="action-button flex-1 rounded-2xl bg-rose-600 px-4 py-3 font-black text-white" onClick={() => { onClearCompletedTestData(); setIsResetConfirmOpen(false); }} type="button">Clear test data</button>
+                      <button className="action-button rounded-2xl border border-amber-300 bg-white px-4 py-3 font-black text-amber-950" onClick={() => setIsResetConfirmOpen(false)} type="button">Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button className="action-button mt-3 w-full rounded-2xl border border-amber-200/35 bg-amber-100/15 px-4 py-3 font-black text-amber-50 disabled:cursor-not-allowed disabled:opacity-60" disabled={clearableProgressCount === 0} onClick={() => setIsResetConfirmOpen(true)} type="button">Clear completed test data</button>
+                )}
+              </div>
               <DashboardSection
                 count={`${awaitingApproval.length} submitted`}
                 icon="check"
