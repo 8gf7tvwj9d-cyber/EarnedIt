@@ -66,6 +66,8 @@ Right now the UI detects those variables and marks the project as Supabase-conne
 ## Database files
 
 - Migration: [supabase/migrations/20260506_create_earnedit_schema.sql](supabase/migrations/20260506_create_earnedit_schema.sql)
+- Beta foundation migration: [supabase/migrations/20260519_beta_multi_household_foundation.sql](supabase/migrations/20260519_beta_multi_household_foundation.sql)
+- Beta chore sync bridge: [supabase/migrations/20260520_beta_chore_sync_bridge.sql](supabase/migrations/20260520_beta_chore_sync_bridge.sql)
 - Seed data: [supabase/seed.sql](supabase/seed.sql)
 
 Core tables:
@@ -74,6 +76,66 @@ Core tables:
 - `child_profiles`
 - `chores`
 - `payouts`
+
+## Beta migration verification
+
+For a clean beta Supabase project, apply migrations in filename order. The beta table order is:
+
+1. `20260519_beta_multi_household_foundation.sql`
+2. `20260520_beta_chore_sync_bridge.sql`
+
+Foundation dependency graph:
+
+- Extensions: `pgcrypto`
+- Independent functions: `public.set_updated_at()`
+- Table shells: `household_app_state`, `households`, `profiles`, `children`, `chores`, `chore_completions`, `chore_photos`, `payments`, `payouts`, `chore_adjustments`
+- Upgrade logic: guarded column normalization for fresh, partial beta, and legacy MVP installs
+- Foreign keys: added after every referenced table exists, using `not valid` so legacy rows do not block setup
+- Indexes: household lookup indexes plus `profiles_user_id_idx`
+- Triggers: `*_set_updated_at`
+- RLS: enabled after all tables exist
+- Policy helper: `public.current_user_household_ids()`
+- Policies: household-scoped access policies plus legacy `household_app_state` local policy
+
+Expected Supabase tables after foundation:
+
+- `household_app_state`
+- `households`
+- `profiles`
+- `children`
+- `chores`
+- `chore_completions`
+- `chore_photos`
+- `payments`
+- `payouts`
+- `chore_adjustments`
+
+Validation query:
+
+```sql
+select
+  expected.table_name,
+  case when actual.table_name is null then 'missing' else 'present' end as status
+from (
+  values
+    ('household_app_state'),
+    ('households'),
+    ('profiles'),
+    ('children'),
+    ('chores'),
+    ('chore_completions'),
+    ('chore_photos'),
+    ('payments'),
+    ('payouts'),
+    ('chore_adjustments')
+) as expected(table_name)
+left join information_schema.tables actual
+  on actual.table_schema = 'public'
+ and actual.table_name = expected.table_name
+order by expected.table_name;
+```
+
+If any row returns `missing`, stop and fix the foundation migration before testing parent signup.
 
 ## Current MVP behavior
 

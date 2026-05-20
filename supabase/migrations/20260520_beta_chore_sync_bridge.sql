@@ -2,10 +2,6 @@
 -- Keep this work on beta-multi-user. Payouts, photos, and streak overrides remain local for now.
 
 alter table public.chores
-  drop constraint if exists chores_parent_id_fkey,
-  drop constraint if exists chores_child_id_fkey;
-
-alter table public.chores
   add column if not exists client_id text,
   add column if not exists parent_profile_id uuid references public.profiles(id) on delete set null;
 
