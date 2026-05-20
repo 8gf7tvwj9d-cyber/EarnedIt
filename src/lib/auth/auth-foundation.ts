@@ -1,4 +1,5 @@
 import { getAuthBootstrapState } from "@/lib/data/app-repository";
+export { isEarnedItAuthTestModeEnabled } from "@/lib/auth-test-mode";
 import { AppData, ChildProfile, Profile } from "@/types/app";
 
 export type ParentSignupDraft = {

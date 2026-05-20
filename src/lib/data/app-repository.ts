@@ -20,6 +20,7 @@ import {
   getSupabaseEnvState,
   getSupabaseSetupWarning,
 } from "@/lib/supabase";
+import { isEarnedItAuthTestModeEnabled } from "@/lib/auth-test-mode";
 import {
   assertHouseholdAccess,
   getHouseholdChores,
@@ -212,17 +213,6 @@ function getRepositoryHouseholdId(appData: AppData) {
 
 function getCurrentTimestamp() {
   return new Date().toISOString();
-}
-
-function isDevelopmentBuild() {
-  return process.env.NODE_ENV !== "production";
-}
-
-function isAuthTestModeEnabled() {
-  return (
-    isDevelopmentBuild() &&
-    process.env.NEXT_PUBLIC_EARNEDIT_AUTH_TEST_MODE?.trim().toLowerCase() === "true"
-  );
 }
 
 function isEmailRateLimitError(error: { message?: string | null } | null | undefined) {
@@ -1112,7 +1102,7 @@ export async function signUpParentWithHousehold(
     };
   }
 
-  if (isAuthTestModeEnabled()) {
+  if (isEarnedItAuthTestModeEnabled()) {
     const appData = createLocalAuthTestAppData(localAppData, {
       displayName,
       email,
@@ -1120,6 +1110,7 @@ export async function signUpParentWithHousehold(
     });
     writeAppData(appData);
     if (process.env.NODE_ENV === "development") {
+      console.info("EarnedIt auth test mode active");
       console.info("[Earned auth] NEXT_PUBLIC_EARNEDIT_AUTH_TEST_MODE handled signup locally.");
     }
     return {

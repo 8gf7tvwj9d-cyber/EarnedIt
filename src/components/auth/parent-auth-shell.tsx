@@ -1,9 +1,10 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   createEmptyParentLoginDraft,
   createEmptyParentSignupDraft,
+  isEarnedItAuthTestModeEnabled,
   type ParentLoginDraft,
   type ParentSignupDraft,
 } from "@/lib/auth/auth-foundation";
@@ -28,6 +29,13 @@ export function ParentAuthShell({
   const [loginDraft, setLoginDraft] = useState<ParentLoginDraft>(() => createEmptyParentLoginDraft());
   const [signupDraft, setSignupDraft] = useState<ParentSignupDraft>(() => createEmptyParentSignupDraft());
   const submitLockRef = useRef(false);
+  const authTestModeActive = isEarnedItAuthTestModeEnabled();
+
+  useEffect(() => {
+    if (authTestModeActive) {
+      console.info("EarnedIt auth test mode active");
+    }
+  }, [authTestModeActive]);
 
   async function runOnce(task: () => Promise<void>) {
     if (isSubmitting || submitLockRef.current) {
