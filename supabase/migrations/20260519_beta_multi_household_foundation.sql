@@ -135,30 +135,6 @@ create table if not exists public.chore_adjustments (
   updated_at timestamptz not null default timezone('utc', now())
 );
 
-alter table public.chores
-  add column if not exists household_id uuid references public.households(id) on delete cascade,
-  add column if not exists parent_id uuid references auth.users(id) on delete cascade,
-  add column if not exists parent_profile_id uuid references public.profiles(id) on delete set null,
-  add column if not exists child_id uuid references public.children(id) on delete cascade,
-  add column if not exists client_id text,
-  add column if not exists start_date date,
-  add column if not exists chore_kind text,
-  add column if not exists reset_frequency text,
-  add column if not exists max_completions_per_reset integer,
-  add column if not exists manual_availability boolean,
-  add column if not exists total_required_completions integer,
-  add column if not exists payout_rule text,
-  add column if not exists miss_behavior text,
-  add column if not exists only_when_child_present boolean,
-  add column if not exists rrc_schedule jsonb,
-  add column if not exists repeat_days jsonb,
-  add column if not exists repeat_pattern text,
-  add column if not exists repeat_days_week_a jsonb,
-  add column if not exists repeat_days_week_b jsonb,
-  add column if not exists is_template boolean,
-  add column if not exists template_chore_id uuid,
-  add column if not exists instance_period_key text;
-
 alter table public.chore_completions
   add column if not exists client_id text;
 
