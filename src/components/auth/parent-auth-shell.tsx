@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   createEmptyParentLoginDraft,
   createEmptyParentSignupDraft,
@@ -27,6 +27,23 @@ export function ParentAuthShell({
   const [mode, setMode] = useState<"login" | "signup">("signup");
   const [loginDraft, setLoginDraft] = useState<ParentLoginDraft>(() => createEmptyParentLoginDraft());
   const [signupDraft, setSignupDraft] = useState<ParentSignupDraft>(() => createEmptyParentSignupDraft());
+  const submitLockRef = useRef(false);
+
+  async function runOnce(task: () => Promise<void>) {
+    if (isSubmitting || submitLockRef.current) {
+      if (process.env.NODE_ENV === "development") {
+        console.info("[Earned auth] Duplicate auth submit ignored while request is pending.");
+      }
+      return;
+    }
+
+    submitLockRef.current = true;
+    try {
+      await task();
+    } finally {
+      submitLockRef.current = false;
+    }
+  }
 
   return (
     <section className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
@@ -138,7 +155,7 @@ export function ParentAuthShell({
             <button
               className="action-button w-full rounded-2xl bg-gradient-to-r from-[#78a85a] via-[#91b85f] to-[#d5a642] px-5 py-4 text-base font-black text-[#231d16] shadow-lg shadow-[#3d2b12]/18"
               disabled={isSubmitting}
-              onClick={() => void onSignup(signupDraft)}
+              onClick={() => void runOnce(() => onSignup(signupDraft))}
               type="button"
             >
               {isSubmitting ? "Creating..." : "Create parent account"}
@@ -182,7 +199,7 @@ export function ParentAuthShell({
             <button
               className="action-button w-full rounded-2xl bg-gradient-to-r from-[#5f8f43] to-[#d4ad4f] px-5 py-4 text-base font-black text-[#231d16] shadow-lg shadow-[#3d2b12]/18"
               disabled={isSubmitting}
-              onClick={() => void onLogin(loginDraft)}
+              onClick={() => void runOnce(() => onLogin(loginDraft))}
               type="button"
             >
               {isSubmitting ? "Signing in..." : "Sign in as parent"}

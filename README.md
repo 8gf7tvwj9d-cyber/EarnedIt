@@ -59,6 +59,7 @@ Set:
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY` for server-only admin tasks such as beta household provisioning or back-office repair scripts
+- `NEXT_PUBLIC_EARNEDIT_AUTH_TEST_MODE=false` by default. Set to `true` only while running local non-production beta testing when Supabase email confirmation or email rate limits block parent signup. In that mode the parent signup flow creates a local test household and skips Supabase signup; production builds ignore the bypass.
 
 Right now the UI detects those variables and marks the project as Supabase-connected while still supporting local-only use without external services.
 

@@ -58,6 +58,9 @@ export function EarnedItApp() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const latestAppDataRef = useRef(appData);
   const mutationQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const parentSignupInFlightRef = useRef(false);
+  const parentSignupAttemptRef = useRef(0);
+  const parentLoginInFlightRef = useRef(false);
   const authBootstrap = getAuthBootstrapState();
 
   useEffect(() => {
@@ -173,6 +176,20 @@ export function EarnedItApp() {
   }
 
   async function handleParentSignup(draft: ParentSignupDraft) {
+    if (parentSignupInFlightRef.current) {
+      if (process.env.NODE_ENV === "development") {
+        console.info("[Earned auth] Parent signup ignored because a signup request is already pending.");
+      }
+      return;
+    }
+
+    parentSignupInFlightRef.current = true;
+    const attempt = parentSignupAttemptRef.current + 1;
+    parentSignupAttemptRef.current = attempt;
+    if (process.env.NODE_ENV === "development") {
+      console.info("[Earned auth] Parent signup started.", { attempt });
+    }
+
     setIsAuthSubmitting(true);
     try {
       const result = await signUpParentWithHousehold(draft, latestAppDataRef.current);
@@ -184,12 +201,38 @@ export function EarnedItApp() {
         setSyncWarning(null);
         pushToast(result.message);
       }
+      if (process.env.NODE_ENV === "development") {
+        console.info("[Earned auth] Parent signup finished.", {
+          attempt,
+          ok: result.ok,
+          storageMode: result.storageMode,
+        });
+      }
+    } catch (error) {
+      console.warn("[Earned auth] Parent signup failed unexpectedly.", error);
+      setAuthMessage("Parent signup hit an unexpected error. The app did not retry automatically.");
+      if (process.env.NODE_ENV === "development") {
+        console.info("[Earned auth] Parent signup finished.", {
+          attempt,
+          ok: false,
+          storageMode,
+        });
+      }
     } finally {
+      parentSignupInFlightRef.current = false;
       setIsAuthSubmitting(false);
     }
   }
 
   async function handleParentLogin(draft: ParentLoginDraft) {
+    if (parentLoginInFlightRef.current) {
+      if (process.env.NODE_ENV === "development") {
+        console.info("[Earned auth] Parent login ignored because a login request is already pending.");
+      }
+      return;
+    }
+
+    parentLoginInFlightRef.current = true;
     setIsAuthSubmitting(true);
     try {
       const result = await signInParent(draft, latestAppDataRef.current);
@@ -202,6 +245,7 @@ export function EarnedItApp() {
         pushToast(result.message);
       }
     } finally {
+      parentLoginInFlightRef.current = false;
       setIsAuthSubmitting(false);
     }
   }
