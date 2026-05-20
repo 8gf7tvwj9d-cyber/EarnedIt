@@ -1,8 +1,8 @@
 import {
-  initializeSharedAppData,
-  resetAppData,
+  loadAppData,
+  resetLocalAppData,
   type SharedAppDataInitialization,
-} from "@/lib/storage/app-state";
+} from "@/lib/data/app-repository";
 import { demoData } from "@/lib/storage/demo-data";
 import { AppData } from "@/types/app";
 
@@ -12,12 +12,12 @@ export function cloneBundledDemoData() {
 
 export async function loadInitialAppData(): Promise<SharedAppDataInitialization> {
   try {
-    return await initializeSharedAppData();
+    return await loadAppData();
   } catch (error) {
     console.warn("[Earned] Initial app load failed, resetting local starter data.", error);
     try {
       return {
-        appData: resetAppData(),
+        appData: resetLocalAppData(),
         shouldPersist: false,
         storageMode: "local",
         syncWarning: "Shared sync unavailable. Using local-only data on this device.",

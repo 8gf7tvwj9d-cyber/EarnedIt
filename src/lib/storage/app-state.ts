@@ -15,7 +15,7 @@ import {
 } from "@/lib/chore-progress";
 import { demoData } from "@/lib/storage/demo-data";
 import { formatCentsForDollarInput, normalizeCents, parseMoneyToCents } from "@/lib/money";
-import { getSupabaseBrowserClient } from "@/lib/supabase";
+import { getSupabaseBrowserClient, getSupabaseSetupWarning } from "@/lib/supabase";
 import {
   AppData,
   CheckIn,
@@ -23,8 +23,10 @@ import {
   ChoreDraft,
   ChildProfile,
   ChoreProofPhoto,
+  Household,
   Payout,
   PaymentLineItem,
+  Profile,
   ProofPhotoInput,
   RrcSchedule,
   User,
@@ -32,7 +34,7 @@ import {
 
 const STORAGE_KEY = "earnedit-family-store-v2";
 const LEGACY_STORAGE_KEYS = ["chorepay-family-store-v2"];
-const APP_DATA_SCHEMA_VERSION = 1;
+const APP_DATA_SCHEMA_VERSION = 2;
 const SHARED_TABLE = "household_app_state";
 const DEFAULT_HOUSEHOLD_ID = "family-household-1";
 const LEGACY_DEMO_PARENT_NAME = ["Mor", "gan"].join("");
@@ -93,6 +95,31 @@ function isAppDataShape(value: unknown): value is AppData {
     isRecord(value.session) &&
     "currentUserId" in value.session
   );
+}
+
+function getTimestampFallback() {
+  return new Date().toISOString();
+}
+
+function getTimestampValue(...candidates: Array<string | null | undefined>) {
+  return candidates.find((candidate) => Boolean(candidate && candidate.trim())) ?? getTimestampFallback();
+}
+
+function getAppHouseholdId(candidate: Partial<AppData> | null | undefined) {
+  const sessionHouseholdId = candidate?.session?.currentHouseholdId?.trim();
+  if (sessionHouseholdId) {
+    return sessionHouseholdId;
+  }
+
+  const householdId =
+    candidate?.households?.[0]?.id ??
+    candidate?.users?.[0]?.household_id ??
+    candidate?.childProfiles?.[0]?.household_id ??
+    candidate?.chores?.[0]?.household_id ??
+    candidate?.checkIns?.[0]?.household_id ??
+    candidate?.payouts?.[0]?.household_id;
+
+  return householdId?.trim() ? householdId : getSharedHouseholdId();
 }
 
 function createStoredPayload(appData: AppData): StoredAppDataPayload {
@@ -225,8 +252,12 @@ function normalizeChore(chore: Chore): Chore {
     normalizedKind === "routine"
       ? chore.start_date ?? null
       : chore.start_date ?? getLocalDateFromTimestamp(chore.created_at);
+  const householdId = chore.household_id?.trim() || getSharedHouseholdId();
+  const createdAt = getTimestampValue(chore.created_at, chore.updated_at);
+  const updatedAt = getTimestampValue(chore.updated_at, chore.created_at);
   return {
     ...chore,
+    household_id: householdId,
     start_date: defaultStartDate,
     repeat_days: weeklyDays,
     repeat_pattern: chore.repeat_pattern ?? "weekly",
@@ -249,21 +280,82 @@ function normalizeChore(chore: Chore): Chore {
           })
         : chore.rrc_schedule ?? null,
     proof_entries: normalizeProofEntries(chore),
-    streak_overrides: chore.streak_overrides ?? [],
+    streak_overrides: (chore.streak_overrides ?? []).map((override) => ({
+      ...override,
+      household_id: override.household_id?.trim() || householdId,
+      created_at: getTimestampValue(override.created_at, override.override_at, updatedAt),
+      updated_at: getTimestampValue(override.updated_at, override.override_at, updatedAt),
+    })),
     is_template:
       chore.is_template ??
       Boolean(normalizedKind === "optional" && chore.template_chore_id == null),
     template_chore_id: chore.template_chore_id ?? null,
     instance_period_key: chore.instance_period_key ?? null,
+    created_at: createdAt,
+    updated_at: updatedAt,
   };
 }
 
 function normalizeAppData(appData: AppData): AppData {
   const migratedAppData = stripLegacyDemoActivity(migrateLegacyDemoNames(appData));
+  const householdId = getAppHouseholdId(migratedAppData);
+  const householdTimestamp = getTimestampFallback();
+  const normalizedHouseholds: Household[] =
+    migratedAppData.households?.length > 0
+      ? migratedAppData.households.map((household) => ({
+          ...household,
+          id: household.id?.trim() || householdId,
+          created_at: getTimestampValue(household.created_at, household.updated_at, householdTimestamp),
+          updated_at: getTimestampValue(household.updated_at, household.created_at, householdTimestamp),
+        }))
+      : [
+          {
+            id: householdId,
+            name: "My Household",
+            created_at: householdTimestamp,
+            updated_at: householdTimestamp,
+          },
+        ];
+  const normalizedUsers: User[] = migratedAppData.users.map((user) => ({
+    ...user,
+    household_id: user.household_id?.trim() || householdId,
+    auth_user_id: user.auth_user_id ?? null,
+    email: user.email ?? null,
+    created_at: getTimestampValue(user.created_at, user.updated_at, householdTimestamp),
+    updated_at: getTimestampValue(user.updated_at, user.created_at, householdTimestamp),
+  }));
+  const normalizedProfiles: Profile[] =
+    migratedAppData.profiles?.length > 0
+      ? migratedAppData.profiles.map((profile) => ({
+          ...profile,
+          household_id: profile.household_id?.trim() || householdId,
+          user_id: profile.user_id ?? null,
+          created_at: getTimestampValue(profile.created_at, profile.updated_at, householdTimestamp),
+          updated_at: getTimestampValue(profile.updated_at, profile.created_at, householdTimestamp),
+        }))
+      : normalizedUsers.map((user) => ({
+          id: `profile-${user.id}`,
+          household_id: user.household_id,
+          user_id: user.id,
+          display_name: user.name,
+          role: user.role,
+          household_role: user.role === "parent" ? "owner" : "viewer",
+          created_at: user.created_at,
+          updated_at: user.updated_at,
+        }));
+  const normalizedChildProfiles: ChildProfile[] = migratedAppData.childProfiles.map((profile) => ({
+    ...profile,
+    household_id: profile.household_id?.trim() || householdId,
+    created_at: getTimestampValue(profile.created_at, profile.updated_at, householdTimestamp),
+    updated_at: getTimestampValue(profile.updated_at, profile.created_at, householdTimestamp),
+  }));
   const normalizedChores = migratedAppData.chores.map((chore) => normalizeChore(chore));
   const normalizedPayouts = migratedAppData.payouts.map((payout) => ({
     ...payout,
+    household_id: payout.household_id?.trim() || householdId,
     amount_cents: normalizeCents(payout.amount_cents),
+    created_at: getTimestampValue(payout.created_at, payout.updated_at, payout.paid_at, householdTimestamp),
+    updated_at: getTimestampValue(payout.updated_at, payout.paid_at, payout.created_at, householdTimestamp),
   }));
   const existingCheckIns = (appData.checkIns ?? []).map(normalizeCheckIn);
   const existingKeys = new Set(
@@ -274,6 +366,7 @@ function normalizeAppData(appData: AppData): AppData {
       .filter((entry) => !existingKeys.has(`${chore.id}:${entry.proof_date}`))
       .map((entry) => ({
         id: entry.id.startsWith("checkin-") ? entry.id : `checkin-${entry.id}`,
+        household_id: chore.household_id,
         chore_id: chore.id,
         parent_id: chore.parent_id,
         child_id: chore.child_id,
@@ -282,13 +375,22 @@ function normalizeAppData(appData: AppData): AppData {
         check_in_date: entry.proof_date,
         submitted_at: entry.submitted_at,
         uploaded_at: entry.uploaded_at ?? entry.submitted_at,
+        created_at: getTimestampValue(entry.submitted_at, chore.updated_at),
+        updated_at: getTimestampValue(entry.uploaded_at, entry.submitted_at, chore.updated_at),
       })),
   );
 
   return {
     ...migratedAppData,
+    households: normalizedHouseholds,
+    profiles: normalizedProfiles,
+    users: normalizedUsers,
+    childProfiles: normalizedChildProfiles,
     session: {
       currentUserId: migratedAppData.session?.currentUserId ?? null,
+      currentHouseholdId: migratedAppData.session?.currentHouseholdId ?? householdId,
+      authUserId: migratedAppData.session?.authUserId ?? null,
+      authMode: migratedAppData.session?.authMode ?? "demo",
     },
     chores: normalizedChores,
     checkIns: [...existingCheckIns, ...migratedRoutineCheckIns].sort((left, right) =>
@@ -307,6 +409,9 @@ function withDeviceSession(appData: AppData, currentUserId: string | null): AppD
     ...appData,
     session: {
       currentUserId,
+      currentHouseholdId: appData.session.currentHouseholdId ?? getAppHouseholdId(appData),
+      authUserId: appData.session.authUserId ?? null,
+      authMode: appData.session.authMode ?? "demo",
     },
   };
 }
@@ -414,9 +519,15 @@ function normalizeProofEntries(chore: Partial<Chore>) {
 
 function normalizeCheckIn(entry: CheckIn): CheckIn {
   const uploadedAt = entry.uploaded_at ?? entry.submitted_at;
+  const householdId = entry.household_id?.trim() || getSharedHouseholdId();
+  const createdAt = getTimestampValue(entry.created_at, entry.submitted_at, uploadedAt);
+  const updatedAt = getTimestampValue(entry.updated_at, uploadedAt, entry.submitted_at);
   return {
     ...entry,
+    household_id: householdId,
     uploaded_at: uploadedAt,
+    created_at: createdAt,
+    updated_at: updatedAt,
     photos: entry.photos?.length
       ? entry.photos.map((photo) => ({
           id: photo.id,
@@ -538,7 +649,7 @@ export async function initializeSharedAppData(): Promise<SharedAppDataInitializa
     return {
       ...local,
       storageMode: "local",
-      syncWarning: null,
+      syncWarning: getSupabaseSetupWarning() ?? "Demo/local mode active on this device.",
     };
   }
 
@@ -823,6 +934,9 @@ export function setCurrentUser(appData: AppData, userId: string | null) {
     ...appData,
     session: {
       currentUserId: userId,
+      currentHouseholdId: appData.session.currentHouseholdId ?? getAppHouseholdId(appData),
+      authUserId: appData.session.authUserId ?? null,
+      authMode: appData.session.authMode ?? "demo",
     },
   };
 }
@@ -851,6 +965,7 @@ export function saveChore(
 ): AppData {
   const timestamp = new Date().toISOString();
   const localDate = formatLocalIsoDate(new Date(timestamp));
+  const householdId = parent.household_id || getAppHouseholdId(appData);
   const amountCents = parseMoneyToCents(draft.amount);
   const isOptionalTemplate = draft.choreKind === "optional";
   const sharedRepeatingSchedule: RrcSchedule | null =
@@ -883,6 +998,7 @@ export function saveChore(
       : null;
   const usesSharedRepeatingSchedule = Boolean(sharedRepeatingSchedule);
   const baseRecord = {
+    household_id: householdId,
     parent_id: parent.id,
     child_id: draft.childId,
     title: draft.title.trim(),
@@ -1233,6 +1349,7 @@ export function saveRoutineCheckIn(
   const submittedAt = new Date().toISOString();
   const checkIn: CheckIn = {
     id: makeId("checkin"),
+    household_id: chore.household_id,
     chore_id: chore.id,
     parent_id: chore.parent_id,
     child_id: chore.child_id,
@@ -1241,6 +1358,8 @@ export function saveRoutineCheckIn(
     check_in_date: checkInDate,
     submitted_at: submittedAt,
     uploaded_at: photos[0]?.uploaded_at ?? submittedAt,
+    created_at: submittedAt,
+    updated_at: submittedAt,
   };
 
   console.log("[Earned] check-in record created", checkIn);
@@ -1301,12 +1420,15 @@ export function overrideMissedStreak(
       const existingOverrides = chore.streak_overrides ?? [];
       const nextOverride = {
         id: makeId("override"),
+        household_id: chore.household_id,
         missed_date: missedDate,
         override_at: timestamp,
         override_type: "excused" as const,
         note: note.trim() || null,
         parent_user_id: parentUser.id,
         parent_name: parentUser.name,
+        created_at: timestamp,
+        updated_at: timestamp,
       };
 
       return {
@@ -1386,12 +1508,15 @@ export function markBalancePaid(
 
   const payout: Payout = {
     id: makeId("payout"),
+    household_id: getAppHouseholdId(appData),
     parent_id: parentId,
     child_id: childId,
     amount_cents: amountCents,
     paid_method: "Manual Apple Cash",
     paid_at: timestamp,
     notes: payoutNotes || null,
+    created_at: timestamp,
+    updated_at: timestamp,
   };
 
   return {

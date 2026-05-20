@@ -3,28 +3,38 @@
 import { useEffect, useRef, useState } from "react";
 import { AppCrashBoundary } from "@/components/app-shell/app-crash-boundary";
 import { cloneBundledDemoData, loadInitialAppData } from "@/components/app-shell/app-data-loader";
+import { ParentAuthShell } from "@/components/auth/parent-auth-shell";
 import { ChildDashboard } from "@/components/child/child-dashboard";
 import { ParentDashboard } from "@/components/parent/parent-dashboard";
 import { AppIcon } from "@/components/ui-icons";
 import {
   approveChore,
   clearCompletedTestData,
-  commitSharedAppData,
+  completeChore,
+  completeRoutineCheckIn,
+  createChildRecord,
+  createChore,
   deleteChore,
-  getChildProfileForUser,
-  getCurrentUser,
-  pullSharedAppDataSnapshot,
-  markBalancePaid,
+  getAuthBootstrapState,
+  getChildren,
+  getChores,
+  getHousehold,
+  getPayments,
+  markChorePaid,
   overrideMissedStreak,
+  persistLocalAppData,
+  pullAppDataSnapshot,
   rejectChore,
-  resetAppData,
-  saveChore,
-  saveRoutineCheckIn,
-  setCurrentUser,
-  submitChore,
-  submitRollingChore,
-  writeAppData,
-} from "@/lib/storage/app-state";
+  resetLocalAppData,
+  setActiveUser,
+  signInParent,
+  signOutParent,
+  signUpParentWithHousehold,
+  submitRoutineForApproval,
+  syncAppData as syncRepositoryAppData,
+} from "@/lib/data/app-repository";
+import type { ParentLoginDraft, ParentSignupDraft } from "@/lib/auth/auth-foundation";
+import { getChildProfileForUser, getCurrentUser } from "@/lib/storage/app-state";
 import { AppData, ChildProfile, ChoreDraft, PaymentLineItem, User } from "@/types/app";
 
 type Toast = {
@@ -43,9 +53,12 @@ export function EarnedItApp() {
   const [hasLoadedStoredData, setHasLoadedStoredData] = useState(false);
   const [storageMode, setStorageMode] = useState<"local" | "supabase">("local");
   const [syncWarning, setSyncWarning] = useState<string | null>(null);
+  const [authMessage, setAuthMessage] = useState<string | null>(null);
+  const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const latestAppDataRef = useRef(appData);
   const mutationQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const authBootstrap = getAuthBootstrapState();
 
   useEffect(() => {
     latestAppDataRef.current = appData;
@@ -61,7 +74,7 @@ export function EarnedItApp() {
       }
 
       if (initialState.shouldPersist) {
-        writeAppData(initialState.appData);
+        persistLocalAppData(initialState.appData);
       }
 
       setAppData(initialState.appData);
@@ -81,7 +94,7 @@ export function EarnedItApp() {
     }
 
     const timer = window.setInterval(async () => {
-      const pulled = await pullSharedAppDataSnapshot(latestAppDataRef.current);
+      const pulled = await pullAppDataSnapshot(latestAppDataRef.current);
       if (!pulled.ok) {
         setStorageMode("local");
         setSyncWarning("Shared sync unavailable. Using local-only data on this device.");
@@ -112,11 +125,11 @@ export function EarnedItApp() {
   function updateAppData(nextData: AppData) {
     latestAppDataRef.current = nextData;
     setAppData(nextData);
-    writeAppData(nextData);
+    persistLocalAppData(nextData);
   }
 
   async function syncAppData(nextData: AppData) {
-    const { appData: refreshed, ok, storageMode: mode } = await commitSharedAppData(nextData);
+    const { appData: refreshed, ok, storageMode: mode } = await syncRepositoryAppData(nextData);
     console.log("[Earned] parent/child state refreshed", {
       chores: refreshed.chores.length,
       checkIns: refreshed.checkIns.length,
@@ -155,14 +168,60 @@ export function EarnedItApp() {
       return;
     }
 
-    updateAppData(setCurrentUser(appData, user.id));
+    updateAppData(setActiveUser(appData, user.id));
     pushToast(`Signed in as ${getRoleDisplayName(appData, role)}`);
+  }
+
+  async function handleParentSignup(draft: ParentSignupDraft) {
+    setIsAuthSubmitting(true);
+    try {
+      const result = await signUpParentWithHousehold(draft, latestAppDataRef.current);
+      setAuthMessage(result.message);
+      setStorageMode(result.storageMode);
+      if (result.ok) {
+        latestAppDataRef.current = result.appData;
+        setAppData(result.appData);
+        setSyncWarning(null);
+        pushToast(result.message);
+      }
+    } finally {
+      setIsAuthSubmitting(false);
+    }
+  }
+
+  async function handleParentLogin(draft: ParentLoginDraft) {
+    setIsAuthSubmitting(true);
+    try {
+      const result = await signInParent(draft, latestAppDataRef.current);
+      setAuthMessage(result.message);
+      setStorageMode(result.storageMode);
+      if (result.ok) {
+        latestAppDataRef.current = result.appData;
+        setAppData(result.appData);
+        setSyncWarning(null);
+        pushToast(result.message);
+      }
+    } finally {
+      setIsAuthSubmitting(false);
+    }
+  }
+
+  async function handleParentSignOut() {
+    const result = await signOutParent(latestAppDataRef.current);
+    setAuthMessage(result.message);
+    setStorageMode(result.storageMode);
+    latestAppDataRef.current = result.appData;
+    setAppData(result.appData);
+    setSyncWarning(result.ok ? "Sign in to load your household." : syncWarning);
+    if (result.ok) {
+      pushToast(result.message);
+    }
   }
 
   function handleFatalReset() {
     let fresh: AppData;
     try {
-      fresh = resetAppData();
+      fresh = resetLocalAppData();
     } catch (error) {
       console.warn("[Earned] Fatal reset fell back to bundled starter data.", error);
       fresh = cloneBundledDemoData();
@@ -178,17 +237,19 @@ export function EarnedItApp() {
   let childProfile: ChildProfile | null = null;
   let childChores = [] as AppData["chores"];
   let childPayouts = [] as AppData["payouts"];
+  let householdName: string | null = null;
 
   try {
     currentUser = getCurrentUser(appData);
     childProfile = getChildProfileForUser(appData.childProfiles ?? [], currentUser);
     const profileId = childProfile?.id ?? null;
     childChores = childProfile
-      ? appData.chores.filter((chore) => chore.child_id === profileId)
+      ? getChores(appData).filter((chore) => chore.child_id === profileId)
       : [];
     childPayouts = childProfile
-      ? appData.payouts.filter((payout) => payout.child_id === profileId)
+      ? getPayments(appData).filter((payout) => payout.child_id === profileId)
       : [];
+    householdName = getHousehold(appData)?.name ?? null;
   } catch (error) {
     console.warn("[Earned] Top-level app derivation failed.", error);
     return (
@@ -243,28 +304,66 @@ export function EarnedItApp() {
             </div>
 
             <div className="relative mt-6 flex flex-wrap gap-2">
-              <button
-                className={`rounded-full px-4 py-2.5 text-sm font-black ${
-                  currentUser?.role === "parent"
-                    ? "hero-button-primary"
-                    : "hero-button-secondary"
-                }`}
-                onClick={() => signInAs("parent")}
-                type="button"
-              >
-                {getRoleDisplayName(appData, "parent")} (Parent)
-              </button>
-              <button
-                className={`rounded-full px-4 py-2.5 text-sm font-black ${
-                  currentUser?.role === "child"
-                    ? "hero-button-primary"
-                    : "hero-button-secondary"
-                }`}
-                onClick={() => signInAs("child")}
-                type="button"
-              >
-                {getRoleDisplayName(appData, "child")} (Child)
-              </button>
+              {appData.session.authMode === "supabase" && appData.session.authUserId ? (
+                <>
+                  <button
+                    className={`rounded-full px-4 py-2.5 text-sm font-black ${
+                      currentUser?.role === "parent"
+                        ? "hero-button-primary"
+                        : "hero-button-secondary"
+                    }`}
+                    onClick={() => signInAs("parent")}
+                    type="button"
+                  >
+                    {getRoleDisplayName(appData, "parent")} (Parent)
+                  </button>
+                  {getChildren(appData).length > 0 ? (
+                    <button
+                      className={`rounded-full px-4 py-2.5 text-sm font-black ${
+                        currentUser?.role === "child"
+                          ? "hero-button-primary"
+                          : "hero-button-secondary"
+                      }`}
+                      onClick={() => signInAs("child")}
+                      type="button"
+                    >
+                      Preview Child
+                    </button>
+                  ) : null}
+                  <button
+                    className="hero-button-secondary rounded-full px-4 py-2.5 text-sm font-black"
+                    onClick={() => void handleParentSignOut()}
+                    type="button"
+                  >
+                    Sign out
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    className={`rounded-full px-4 py-2.5 text-sm font-black ${
+                      currentUser?.role === "parent"
+                        ? "hero-button-primary"
+                        : "hero-button-secondary"
+                    }`}
+                    onClick={() => signInAs("parent")}
+                    type="button"
+                  >
+                    {getRoleDisplayName(appData, "parent")} (Parent)
+                  </button>
+                  <button
+                    className={`rounded-full px-4 py-2.5 text-sm font-black ${
+                      currentUser?.role === "child"
+                        ? "hero-button-primary"
+                        : "hero-button-secondary"
+                    }`}
+                    onClick={() => signInAs("child")}
+                    type="button"
+                  >
+                    {getRoleDisplayName(appData, "child")} (Child)
+                  </button>
+                </>
+              )}
             </div>
             {syncWarning ? (
               <p className="relative mt-3 text-sm font-bold text-[#ffe8be]">{syncWarning}</p>
@@ -275,7 +374,15 @@ export function EarnedItApp() {
             )}
           </header>
 
-          {!currentUser ? (
+          {!currentUser && appData.session.authMode === "supabase" ? (
+            <ParentAuthShell
+              authMessage={authMessage}
+              authWarning={authBootstrap.setupWarning}
+              isSubmitting={isAuthSubmitting}
+              onLogin={handleParentLogin}
+              onSignup={handleParentSignup}
+            />
+          ) : !currentUser ? (
             <section className="grid gap-4 lg:grid-cols-[1.08fr_0.92fr]">
               <div className="panel-strong mode-frame rounded-[32px] p-6 text-white sm:p-7">
                 <div className="section-kicker kicker-row">
@@ -363,13 +470,27 @@ export function EarnedItApp() {
             </section>
           ) : currentUser.role === "parent" ? (
             <ParentDashboard
+              authMode={appData.session.authMode}
               currentUser={currentUser}
               checkIns={appData.checkIns}
-              childProfiles={appData.childProfiles.filter(
+              childProfiles={getChildren(appData).filter(
                 (profile) => profile.parent_id === currentUser.id,
               )}
-              chores={appData.chores.filter((chore) => chore.parent_id === currentUser.id)}
-              payouts={appData.payouts.filter((payout) => payout.parent_id === currentUser.id)}
+              chores={getChores(appData).filter((chore) => chore.parent_id === currentUser.id)}
+              householdName={householdName}
+              payouts={getPayments(appData).filter((payout) => payout.parent_id === currentUser.id)}
+              onCreateChild={async (name) => {
+                const result = await createChildRecord(name, latestAppDataRef.current);
+                if (result.ok) {
+                  latestAppDataRef.current = result.appData;
+                  setAppData(result.appData);
+                  pushToast(result.message);
+                }
+                return {
+                  ok: result.ok,
+                  message: result.message,
+                };
+              }}
               onApprove={(choreId) => {
                 void enqueueMutation(async (snapshot) => {
                   await syncAppData(approveChore(snapshot, choreId));
@@ -398,7 +519,7 @@ export function EarnedItApp() {
               onMarkPaid={(childId, notes, paymentItems?: PaymentLineItem[]) => {
                 void enqueueMutation(async (snapshot) => {
                   const before = snapshot.payouts.length;
-                  const next = markBalancePaid(snapshot, currentUser.id, childId, notes, paymentItems);
+                  const next = markChorePaid(snapshot, currentUser.id, childId, notes, paymentItems);
                   await syncAppData(next);
                   pushToast(
                     next.payouts.length > before
@@ -415,7 +536,7 @@ export function EarnedItApp() {
               }}
               onSaveChore={(draft: ChoreDraft) => {
                 void enqueueMutation(async (snapshot) => {
-                  await syncAppData(saveChore(snapshot, currentUser, draft));
+                  await syncAppData(createChore(snapshot, currentUser, draft));
                   pushToast(draft.id ? "Chore updated" : "Chore created");
                 });
               }}
@@ -433,7 +554,7 @@ export function EarnedItApp() {
                   appData: latestAppDataRef.current,
                 };
                 await enqueueMutation(async (snapshot) => {
-                  result = saveRoutineCheckIn(snapshot, choreId, photos) as RoutineSaveResult;
+                  result = completeRoutineCheckIn(snapshot, choreId, photos) as RoutineSaveResult;
                   if (result.ok) {
                     await syncAppData(result.appData);
                     pushToast(result.message);
@@ -443,13 +564,13 @@ export function EarnedItApp() {
               }}
               onSubmitChore={(choreId, photos) => {
                 void enqueueMutation(async (snapshot) => {
-                  await syncAppData(submitChore(snapshot, choreId, photos));
+                  await syncAppData(completeChore(snapshot, choreId, photos));
                   pushToast("Chore submitted for review");
                 });
               }}
               onSubmitRollingChore={(choreId) => {
                 void enqueueMutation(async (snapshot) => {
-                  await syncAppData(submitRollingChore(snapshot, choreId));
+                  await syncAppData(submitRoutineForApproval(snapshot, choreId));
                   pushToast("Repeating chore submitted for review");
                 });
               }}

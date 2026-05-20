@@ -1,4 +1,6 @@
 export type UserRole = "parent" | "child";
+export type HouseholdRole = "owner" | "parent" | "caregiver" | "viewer";
+export type AppAuthMode = "demo" | "supabase";
 export type ChoreKind = "one_time" | "optional" | "routine";
 export type RepeatPattern = "weekly" | "biweekly";
 export type ResetFrequency = "daily" | "weekly";
@@ -30,6 +32,24 @@ export type ChoreStatus =
   | "paid"
   | "expired";
 
+export type Household = {
+  id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Profile = {
+  id: string;
+  household_id: string;
+  user_id: string | null;
+  display_name: string;
+  role: UserRole;
+  household_role: HouseholdRole;
+  created_at: string;
+  updated_at: string;
+};
+
 export type RrcCustodyPattern = {
   baseWeekendStartDate: string | null;
   weekdayDays: WeekdayKey[];
@@ -48,20 +68,59 @@ export type RrcSchedule = {
 
 export type User = {
   id: string;
+  household_id: string;
+  auth_user_id?: string | null;
   name: string;
   username: string;
+  email?: string | null;
   role: UserRole;
+  created_at: string;
+  updated_at: string;
 };
 
 export type ChildProfile = {
   id: string;
+  household_id: string;
   parent_id: string;
   name: string;
   user_id: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ChoreProofPhoto = {
+  id: string;
+  photo_url: string;
+  uploaded_at: string | null;
+  label?: ProofPhotoLabel | null;
+};
+
+export type ChoreProofEntry = {
+  id: string;
+  proof_date: string;
+  photo_url: string;
+  submitted_at: string;
+  uploaded_at?: string | null;
+  label?: ProofPhotoLabel | null;
+  photos?: ChoreProofPhoto[];
+};
+
+export type RoutineStreakOverride = {
+  id: string;
+  household_id: string;
+  missed_date: string;
+  override_at: string;
+  override_type: StreakOverrideType;
+  note: string | null;
+  parent_user_id: string | null;
+  parent_name: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type Chore = {
   id: string;
+  household_id: string;
   parent_id: string;
   child_id: string;
   is_template: boolean;
@@ -98,33 +157,6 @@ export type Chore = {
   updated_at: string;
 };
 
-export type ChoreProofPhoto = {
-  id: string;
-  photo_url: string;
-  uploaded_at: string | null;
-  label?: ProofPhotoLabel | null;
-};
-
-export type ChoreProofEntry = {
-  id: string;
-  proof_date: string;
-  photo_url: string;
-  submitted_at: string;
-  uploaded_at?: string | null;
-  label?: ProofPhotoLabel | null;
-  photos?: ChoreProofPhoto[];
-};
-
-export type RoutineStreakOverride = {
-  id: string;
-  missed_date: string;
-  override_at: string;
-  override_type: StreakOverrideType;
-  note: string | null;
-  parent_user_id: string | null;
-  parent_name: string | null;
-};
-
 export type ProofPhotoInput = {
   photo_url: string;
   uploaded_at: string;
@@ -133,6 +165,7 @@ export type ProofPhotoInput = {
 
 export type CheckIn = {
   id: string;
+  household_id: string;
   chore_id: string;
   parent_id: string;
   child_id: string;
@@ -141,16 +174,21 @@ export type CheckIn = {
   check_in_date: string;
   submitted_at: string;
   uploaded_at?: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type Payout = {
   id: string;
+  household_id: string;
   parent_id: string;
   child_id: string;
   amount_cents: number;
   paid_method: string;
   paid_at: string;
   notes: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type PaymentLineItem = {
@@ -161,9 +199,14 @@ export type PaymentLineItem = {
 
 export type AppSession = {
   currentUserId: string | null;
+  currentHouseholdId: string | null;
+  authUserId: string | null;
+  authMode: AppAuthMode;
 };
 
 export type AppData = {
+  households: Household[];
+  profiles: Profile[];
   users: User[];
   childProfiles: ChildProfile[];
   chores: Chore[];

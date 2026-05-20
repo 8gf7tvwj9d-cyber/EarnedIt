@@ -45,10 +45,13 @@ import {
 
 type ParentDashboardProps = {
   currentUser: User;
+  authMode?: "demo" | "supabase";
   childProfiles: ChildProfile[];
   chores: Chore[];
   checkIns: CheckIn[];
+  householdName?: string | null;
   payouts: Payout[];
+  onCreateChild?: (name: string) => Promise<{ ok: boolean; message: string }>;
   onSaveChore: (draft: ChoreDraft) => void;
   onDeleteChore: (choreId: string) => void;
   onApprove: (choreId: string) => void;
@@ -94,10 +97,13 @@ function getDefaultParentSections() {
 
 export function ParentDashboard({
   currentUser,
+  authMode = "demo",
   childProfiles,
   chores,
   checkIns,
+  householdName = null,
   payouts,
+  onCreateChild,
   onSaveChore,
   onDeleteChore,
   onApprove,
@@ -118,6 +124,9 @@ export function ParentDashboard({
   const [rejectionNote, setRejectionNote] = useState("");
   const [payoutNotes, setPayoutNotes] = useState("");
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
+  const [childNameDraft, setChildNameDraft] = useState("");
+  const [childSetupMessage, setChildSetupMessage] = useState<string | null>(null);
+  const [isSavingChild, setIsSavingChild] = useState(false);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => {
     if (typeof window === "undefined") {
       return getDefaultParentSections();
@@ -208,6 +217,17 @@ export function ParentDashboard({
 
     composerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [draft.id, isComposerOpen]);
+
+  useEffect(() => {
+    if (draft.childId || childProfiles.length === 0) {
+      return;
+    }
+
+    setDraft((current) => ({
+      ...current,
+      childId: childProfiles[0]?.id ?? "",
+    }));
+  }, [childProfiles, draft.childId]);
 
   useEffect(() => {
     window.sessionStorage.setItem(
@@ -461,6 +481,23 @@ export function ParentDashboard({
     resetDraft();
   }
 
+  async function handleCreateChild() {
+    if (!onCreateChild) {
+      return;
+    }
+
+    setIsSavingChild(true);
+    try {
+      const result = await onCreateChild(childNameDraft);
+      setChildSetupMessage(result.message);
+      if (result.ok) {
+        setChildNameDraft("");
+      }
+    } finally {
+      setIsSavingChild(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <section className="grid gap-3 md:grid-cols-3">
@@ -505,6 +542,48 @@ export function ParentDashboard({
             />
 
             <div className="space-y-4">
+              {authMode === "supabase" ? (
+                <div className="rounded-[24px] border border-white/14 bg-white/10 p-4 text-white">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-black uppercase tracking-[0.16em] text-[#fff0cb]">
+                        Household setup
+                      </p>
+                      <p className="mt-1 text-base font-black">
+                        {householdName ?? "Current household"}
+                      </p>
+                      <p className="mt-1 text-sm leading-6 text-slate-200">
+                        Parent auth is live. Child records created here stay inside this household.
+                      </p>
+                    </div>
+                    <span className="label-chip label-chip-light">{childProfiles.length} children</span>
+                  </div>
+
+                  <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                    <input
+                      className="field-surface min-w-0 flex-1 rounded-2xl px-4 py-4 text-base text-[#2f271f]"
+                      placeholder="Add child name"
+                      value={childNameDraft}
+                      onChange={(event) => setChildNameDraft(event.target.value)}
+                    />
+                    <button
+                      className="action-button rounded-2xl bg-gradient-to-r from-[#78a85a] via-[#91b85f] to-[#d5a642] px-5 py-4 text-base font-black text-[#231d16] shadow-lg shadow-[#3d2b12]/18"
+                      disabled={!onCreateChild || isSavingChild}
+                      onClick={() => void handleCreateChild()}
+                      type="button"
+                    >
+                      {isSavingChild ? "Adding..." : "Add child"}
+                    </button>
+                  </div>
+
+                  {childSetupMessage ? (
+                    <p className="mt-3 rounded-2xl bg-white/10 px-3 py-2 text-sm font-bold text-white">
+                      {childSetupMessage}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+
               <div className="rounded-[24px] border border-amber-200/35 bg-white/10 p-4 text-white">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>

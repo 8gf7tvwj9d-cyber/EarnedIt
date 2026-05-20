@@ -58,6 +58,7 @@ Set:
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY` for server-only admin tasks such as beta household provisioning or back-office repair scripts
 
 Right now the UI detects those variables and marks the project as Supabase-connected while still supporting local-only use without external services.
 
@@ -88,6 +89,7 @@ Use separate branches so the working household app stays protected while larger 
 - `home-stable`: safe home-use version for the current household app. Keep this branch deployable and use it for small fixes that should go live at home.
 - `beta-multi-user`: experimental beta branch for Supabase Auth, database persistence, multi-household support, and other larger changes. Do not point the live household app at this branch.
 - `main`: integration branch for proven merged changes only.
+- Risk note: risky multi-household or auth/database work belongs on `beta-multi-user`, not `home-stable`.
 
 Recommended flow:
 
