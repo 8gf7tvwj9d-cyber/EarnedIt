@@ -14,6 +14,7 @@ type ParentAuthShellProps = {
   authMessage: string | null;
   authWarning: string | null;
   isSubmitting: boolean;
+  authState?: string;
   onLogin: (draft: ParentLoginDraft) => Promise<void>;
   onSignup: (draft: ParentSignupDraft) => Promise<void>;
 };
@@ -21,6 +22,7 @@ type ParentAuthShellProps = {
 export function ParentAuthShell({
   authMessage,
   authWarning,
+  authState,
   isSubmitting,
   onLogin,
   onSignup,
@@ -66,8 +68,8 @@ export function ParentAuthShell({
           Sign in as a parent and keep each household fenced in.
         </h2>
         <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-200 sm:text-base">
-          This beta phase uses real parent auth plus real household records in Supabase. Chores
-          still stay local for now, but household identity and child records no longer ride on demo data.
+          This beta phase uses real parent auth, household records, child records, chores, and
+          completion sync in Supabase.
         </p>
 
         <div className="mt-6 flex flex-wrap gap-2">
@@ -99,6 +101,11 @@ export function ParentAuthShell({
         {authMessage ? (
           <p className="mt-4 rounded-2xl border border-white/12 bg-white/10 px-4 py-3 text-sm font-bold text-white">
             {authMessage}
+          </p>
+        ) : null}
+        {authState ? (
+          <p className="mt-3 text-xs font-bold uppercase tracking-[0.18em] text-slate-300">
+            {authState.replace(/_/g, " ")}
           </p>
         ) : null}
       </div>

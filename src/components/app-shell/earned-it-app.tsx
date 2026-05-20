@@ -33,7 +33,7 @@ import {
   submitRoutineForApproval,
   syncAppData as syncRepositoryAppData,
 } from "@/lib/data/app-repository";
-import type { ParentLoginDraft, ParentSignupDraft } from "@/lib/auth/auth-foundation";
+import type { AuthFlowState, ParentLoginDraft, ParentSignupDraft } from "@/lib/auth/auth-foundation";
 import { getChildProfileForUser, getCurrentUser } from "@/lib/storage/app-state";
 import { AppData, ChildProfile, ChoreDraft, PaymentLineItem, User } from "@/types/app";
 
@@ -54,6 +54,7 @@ export function EarnedItApp() {
   const [storageMode, setStorageMode] = useState<"local" | "supabase">("local");
   const [syncWarning, setSyncWarning] = useState<string | null>(null);
   const [authMessage, setAuthMessage] = useState<string | null>(null);
+  const [authState, setAuthState] = useState<AuthFlowState>("signed_out");
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const latestAppDataRef = useRef(appData);
@@ -83,6 +84,12 @@ export function EarnedItApp() {
       setAppData(initialState.appData);
       setStorageMode(initialState.storageMode);
       setSyncWarning(initialState.syncWarning);
+      setAuthState(
+        initialState.appData.session.authMode === "supabase" &&
+          initialState.appData.session.authUserId
+          ? "ready"
+          : "signed_out",
+      );
       setHasLoadedStoredData(true);
     })();
 
@@ -99,8 +106,10 @@ export function EarnedItApp() {
     const timer = window.setInterval(async () => {
       const pulled = await pullAppDataSnapshot(latestAppDataRef.current);
       if (!pulled.ok) {
-        setStorageMode("local");
-        setSyncWarning("Shared sync unavailable. Using local-only data on this device.");
+        setStorageMode(pulled.storageMode);
+        setSyncWarning(
+          pulled.message ?? "Shared sync unavailable. Fix Supabase before continuing beta sync.",
+        );
         return;
       }
 
@@ -132,7 +141,12 @@ export function EarnedItApp() {
   }
 
   async function syncAppData(nextData: AppData) {
-    const { appData: refreshed, ok, storageMode: mode } = await syncRepositoryAppData(nextData);
+    const {
+      appData: refreshed,
+      message,
+      ok,
+      storageMode: mode,
+    } = await syncRepositoryAppData(nextData);
     console.log("[Earned] parent/child state refreshed", {
       chores: refreshed.chores.length,
       checkIns: refreshed.checkIns.length,
@@ -142,11 +156,7 @@ export function EarnedItApp() {
     latestAppDataRef.current = refreshed;
     setAppData(refreshed);
     setStorageMode(mode);
-    setSyncWarning(
-      mode === "supabase"
-        ? null
-        : "Shared sync unavailable. Using local-only data on this device.",
-    );
+    setSyncWarning(ok && mode === "supabase" ? null : message ?? "Shared sync unavailable.");
     return { refreshed, ok, mode };
   }
 
@@ -191,9 +201,11 @@ export function EarnedItApp() {
     }
 
     setIsAuthSubmitting(true);
+    setAuthState("signing_up");
     try {
       const result = await signUpParentWithHousehold(draft, latestAppDataRef.current);
       setAuthMessage(result.message);
+      setAuthState(result.authState);
       setStorageMode(result.storageMode);
       if (result.ok) {
         latestAppDataRef.current = result.appData;
@@ -211,6 +223,7 @@ export function EarnedItApp() {
     } catch (error) {
       console.warn("[Earned auth] Parent signup failed unexpectedly.", error);
       setAuthMessage("Parent signup hit an unexpected error. The app did not retry automatically.");
+      setAuthState("auth_error");
       if (process.env.NODE_ENV === "development") {
         console.info("[Earned auth] Parent signup finished.", {
           attempt,
@@ -234,9 +247,11 @@ export function EarnedItApp() {
 
     parentLoginInFlightRef.current = true;
     setIsAuthSubmitting(true);
+    setAuthState("signing_in");
     try {
       const result = await signInParent(draft, latestAppDataRef.current);
       setAuthMessage(result.message);
+      setAuthState(result.authState);
       setStorageMode(result.storageMode);
       if (result.ok) {
         latestAppDataRef.current = result.appData;
@@ -253,6 +268,7 @@ export function EarnedItApp() {
   async function handleParentSignOut() {
     const result = await signOutParent(latestAppDataRef.current);
     setAuthMessage(result.message);
+    setAuthState(result.authState);
     setStorageMode(result.storageMode);
     latestAppDataRef.current = result.appData;
     setAppData(result.appData);
@@ -421,6 +437,7 @@ export function EarnedItApp() {
           {!currentUser && appData.session.authMode === "supabase" ? (
             <ParentAuthShell
               authMessage={authMessage}
+              authState={authState}
               authWarning={authBootstrap.setupWarning}
               isSubmitting={isAuthSubmitting}
               onLogin={handleParentLogin}

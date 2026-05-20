@@ -14,6 +14,18 @@ export type ParentLoginDraft = {
   password: string;
 };
 
+export type AuthFlowState =
+  | "signed_out"
+  | "signing_up"
+  | "awaiting_email_confirmation"
+  | "signing_in"
+  | "signed_in_loading_household"
+  | "household_missing"
+  | "ready"
+  | "auth_error"
+  | "database_error"
+  | "migration_missing";
+
 export function createEmptyParentSignupDraft(): ParentSignupDraft {
   return {
     email: "",

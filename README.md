@@ -59,9 +59,32 @@ Set:
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY` for server-only admin tasks such as beta household provisioning or back-office repair scripts
-- `NEXT_PUBLIC_EARNEDIT_AUTH_TEST_MODE=false` by default. Set to `true` only while running local non-production beta testing when Supabase email confirmation or email rate limits block parent signup. In that mode the parent signup flow creates a local test household and skips Supabase signup; production builds ignore the bypass.
+- `NEXT_PUBLIC_EARNEDIT_AUTH_TEST_MODE=false` by default. This is an emergency local fallback only. Set to `true` only in a non-production build when Supabase email confirmation or rate limits block parent signup while you are debugging. In that mode the parent signup flow creates a local test household and skips Supabase signup; production builds ignore the bypass.
 
-Right now the UI detects those variables and marks the project as Supabase-connected while still supporting local-only use without external services.
+When Supabase env vars are present, beta uses real Supabase Auth and database sync. If Supabase is configured but migrations, RLS, or auth settings are broken, the app should show the Supabase error instead of silently falling back to local data.
+
+## Beta Supabase setup checklist
+
+Use this for `beta-multi-user` in-house testing:
+
+1. Create or open the beta Supabase project.
+2. Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` to `.env.local`.
+3. In Supabase SQL Editor, run the beta migrations in this order:
+   - `supabase/migrations/20260519_beta_multi_household_foundation.sql`
+   - `supabase/migrations/20260520_beta_chore_sync_bridge.sql`
+4. Run the verification queries below.
+5. Check Supabase Table Editor for `households`, `profiles`, `children`, `chores`, `chore_completions`, `chore_photos`, `payments`, `payouts`, `chore_adjustments`, and `household_app_state`.
+6. Start the app with `npm run dev` and create a parent account.
+
+Do not run the old single-household schema on a fresh beta project unless you are explicitly testing the legacy upgrade path.
+
+Supabase Auth settings:
+
+- Email confirmation ON: signup can create the auth user but return no active session. The app will show `Account created. Please confirm your email, then log in.`
+- Email confirmation OFF: signup should return an active session and continue into household bootstrap immediately. This is usually smoother for internal same-day device testing.
+- Email rate limit exceeded: the app does not retry signup automatically. Wait for the email window to reset, turn confirmation off for internal testing, or manually confirm the user in Supabase Auth.
+- Manual confirmation: Supabase Dashboard -> Authentication -> Users -> open the user -> confirm email.
+- Redirect URLs: add the local app URL such as `http://localhost:3000` and any beta preview URL to Supabase Auth URL configuration before testing email links.
 
 ## Database files
 
@@ -113,12 +136,32 @@ Expected Supabase tables after foundation:
 Validation query:
 
 ```sql
+select table_name
+from information_schema.tables
+where table_schema = 'public'
+and table_name in (
+  'households',
+  'profiles',
+  'children',
+  'chores',
+  'chore_completions',
+  'chore_photos',
+  'payments',
+  'payouts',
+  'chore_adjustments',
+  'household_app_state'
+)
+order by table_name;
+```
+
+Status query:
+
+```sql
 select
   expected.table_name,
   case when actual.table_name is null then 'missing' else 'present' end as status
 from (
   values
-    ('household_app_state'),
     ('households'),
     ('profiles'),
     ('children'),
@@ -127,12 +170,45 @@ from (
     ('chore_photos'),
     ('payments'),
     ('payouts'),
-    ('chore_adjustments')
+    ('chore_adjustments'),
+    ('household_app_state')
 ) as expected(table_name)
 left join information_schema.tables actual
   on actual.table_schema = 'public'
  and actual.table_name = expected.table_name
 order by expected.table_name;
+```
+
+Critical sync columns:
+
+```sql
+select
+  table_name,
+  column_name,
+  data_type,
+  is_nullable
+from information_schema.columns
+where table_schema = 'public'
+and table_name in (
+  'households',
+  'profiles',
+  'children',
+  'chores',
+  'chore_completions',
+  'chore_photos',
+  'payments',
+  'payouts',
+  'chore_adjustments',
+  'household_app_state'
+)
+and column_name in (
+  'household_id',
+  'child_id',
+  'client_id',
+  'created_at',
+  'updated_at'
+)
+order by table_name, column_name;
 ```
 
 If any row returns `missing`, stop and fix the foundation migration before testing parent signup.

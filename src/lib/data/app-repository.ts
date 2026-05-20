@@ -21,6 +21,7 @@ import {
   getSupabaseSetupWarning,
 } from "@/lib/supabase";
 import { isEarnedItAuthTestModeEnabled } from "@/lib/auth-test-mode";
+import type { AuthFlowState } from "@/lib/auth/auth-foundation";
 import {
   assertHouseholdAccess,
   getHouseholdChores,
@@ -165,12 +166,14 @@ export type SharedAppDataInitialization = AppDataInitialization & {
 
 export type SharedCommitResult = {
   appData: AppData;
+  message?: string;
   ok: boolean;
   storageMode: DataBackendMode;
 };
 
 export type SharedPullResult = {
   appData: AppData | null;
+  message?: string;
   ok: boolean;
   storageMode: DataBackendMode;
 };
@@ -195,6 +198,7 @@ export type ParentLoginDraft = {
 
 export type ParentAuthResult = {
   appData: AppData;
+  authState: AuthFlowState;
   message: string;
   ok: boolean;
   storageMode: DataBackendMode;
@@ -224,16 +228,101 @@ function isEmailRateLimitError(error: { message?: string | null } | null | undef
   );
 }
 
-function getSignupErrorMessage(error: { message?: string | null } | null | undefined) {
-  if (isEmailRateLimitError(error)) {
-    return "Supabase email rate limit hit during beta signup. The app will not retry automatically. For local testing, either wait for the email window to reset, disable/relax email confirmation in Supabase Auth settings, manually confirm the user, or run with NEXT_PUBLIC_EARNEDIT_AUTH_TEST_MODE=true in a non-production build.";
+function getErrorMessage(error: unknown) {
+  if (typeof error === "string") {
+    return error;
   }
 
-  return error?.message ?? "Parent signup failed.";
+  if (error && typeof error === "object" && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string") {
+      return message;
+    }
+  }
+
+  return "Unknown Supabase error.";
+}
+
+function isMissingMigrationError(error: unknown) {
+  const message = getErrorMessage(error).toLowerCase();
+  return (
+    message.includes("could not find the table") ||
+    message.includes("schema cache") ||
+    (message.includes("relation") && message.includes("does not exist")) ||
+    (message.includes("column") && message.includes("does not exist"))
+  );
+}
+
+function isRlsDeniedError(error: unknown) {
+  const message = getErrorMessage(error).toLowerCase();
+  return (
+    message.includes("row-level security") ||
+    message.includes("permission denied") ||
+    message.includes("violates row-level security policy")
+  );
+}
+
+function isNetworkError(error: unknown) {
+  const message = getErrorMessage(error).toLowerCase();
+  return (
+    message.includes("failed to fetch") ||
+    message.includes("network") ||
+    message.includes("fetcherror") ||
+    message.includes("timeout")
+  );
+}
+
+function describeSupabaseError(error: unknown, fallback: string) {
+  if (isMissingMigrationError(error)) {
+    return "Supabase migration is missing or stale. Run the beta foundation and bridge migrations, then verify the expected tables exist.";
+  }
+
+  if (isRlsDeniedError(error)) {
+    return "Supabase denied access through RLS. Confirm the user is signed in and the household/profile RLS policies are installed.";
+  }
+
+  if (isNetworkError(error)) {
+    return "Could not reach Supabase. Check the network connection and Supabase project URL.";
+  }
+
+  const message = getErrorMessage(error);
+  return message === "Unknown Supabase error." ? fallback : message;
+}
+
+function getDatabaseAuthState(error: unknown): AuthFlowState {
+  return isMissingMigrationError(error) ? "migration_missing" : "database_error";
+}
+
+function getSignupErrorMessage(error: { message?: string | null } | null | undefined) {
+  if (isEmailRateLimitError(error)) {
+    return "Supabase email rate limit hit during beta signup. The app will not retry automatically. Wait for the email window to reset, disable confirmation for internal testing, or manually confirm the user in Supabase Auth.";
+  }
+
+  const message = error?.message?.toLowerCase() ?? "";
+  if (message.includes("already registered") || message.includes("already exists")) {
+    return "An account already exists for this email. Try logging in instead.";
+  }
+
+  return describeSupabaseError(error, "Parent signup failed.");
 }
 
 function getEmailConfirmationMessage(email: string) {
-  return `Account created for ${email}, but Supabase did not return an active session. Check Supabase Auth settings or confirm email before logging in. The app will not retry signup automatically.`;
+  return `Account created for ${email}. Please confirm your email, then log in.`;
+}
+
+function getLoginErrorMessage(error: { message?: string | null } | null | undefined) {
+  const message = error?.message?.toLowerCase() ?? "";
+  if (
+    message.includes("invalid login") ||
+    message.includes("invalid credentials") ||
+    message.includes("email not confirmed")
+  ) {
+    return message.includes("email not confirmed")
+      ? "Please confirm your email before logging in."
+      : "Invalid login. Check the email and password, then try again.";
+  }
+
+  return describeSupabaseError(error, "Parent login failed.");
 }
 
 function makeLocalId(prefix: string) {
@@ -745,13 +834,39 @@ async function loadRemoteChoreState(
 async function createRemoteParentHousehold(
   authUser: AuthSessionUser,
   pendingSignup: PendingParentSignup,
-): Promise<{ graph: HouseholdGraph | null; household: HouseholdRow | null; message: string | null }> {
+): Promise<{
+  authState: AuthFlowState;
+  graph: HouseholdGraph | null;
+  household: HouseholdRow | null;
+  message: string | null;
+}> {
   const supabase = getSupabaseBrowserClient();
   if (!supabase) {
     return {
+      authState: "auth_error",
       graph: null,
       household: null,
       message: "Supabase is not configured yet.",
+    };
+  }
+
+  if (process.env.NODE_ENV === "development") {
+    console.info("[Earned auth] Household bootstrap starts.", { authUserId: authUser.id });
+  }
+
+  const existingGraph = await loadRemoteHouseholdGraph(authUser);
+  if (existingGraph) {
+    if (process.env.NODE_ENV === "development") {
+      console.info("[Earned auth] Existing parent profile found.", {
+        householdId: existingGraph.household.id,
+      });
+    }
+
+    return {
+      authState: "ready",
+      graph: existingGraph,
+      household: null,
+      message: null,
     };
   }
 
@@ -766,10 +881,15 @@ async function createRemoteParentHousehold(
 
   if (householdError) {
     return {
+      authState: getDatabaseAuthState(householdError),
       graph: null,
       household: null,
-      message: householdError.message,
+      message: describeSupabaseError(householdError, "Household could not be created."),
     };
+  }
+
+  if (process.env.NODE_ENV === "development") {
+    console.info("[Earned auth] Household created.", { householdId: household.id });
   }
 
   const { error: profileError } = await supabase
@@ -790,16 +910,26 @@ async function createRemoteParentHousehold(
 
   if (profileError) {
     return {
+      authState: getDatabaseAuthState(profileError),
       graph: null,
       household,
-      message: profileError.message,
+      message: describeSupabaseError(profileError, "Parent profile could not be created."),
     };
   }
 
+  if (process.env.NODE_ENV === "development") {
+    console.info("[Earned auth] Parent profile created.", {
+      authUserId: authUser.id,
+      householdId: household.id,
+    });
+  }
+
+  const graph = await loadRemoteHouseholdGraph(authUser);
   return {
-    graph: await loadRemoteHouseholdGraph(authUser),
+    authState: graph ? "ready" : "database_error",
+    graph,
     household,
-    message: null,
+    message: graph ? null : "Household was created, but the account profile could not be reloaded.",
   };
 }
 
@@ -921,6 +1051,7 @@ export function getAuthBootstrapState(): AuthBootstrapState {
 export async function loadAppData(): Promise<SharedAppDataInitialization> {
   const local = initializeAppData();
   const authBootstrap = getAuthBootstrapState();
+  let authUserForFailure: AuthSessionUser | null = null;
 
   if (!authBootstrap.canUseSupabaseAuth) {
     return {
@@ -932,6 +1063,7 @@ export async function loadAppData(): Promise<SharedAppDataInitialization> {
 
   try {
     const authUser = await getSignedInAuthUser();
+    authUserForFailure = authUser;
     if (!authUser) {
       const signedOutAppData = withSupabaseSessionContext(local.appData, null);
       return {
@@ -970,11 +1102,15 @@ export async function loadAppData(): Promise<SharedAppDataInitialization> {
       syncWarning: null,
     };
   } catch (error) {
-    console.warn("[Earned] Supabase household bootstrap failed. Using local mode.", error);
+    console.warn("[Earned] Supabase household bootstrap failed.", error);
     return {
-      ...local,
-      storageMode: "local",
-      syncWarning: "Supabase household sync is unavailable. Using local-only data on this device.",
+      appData: withSupabaseSessionContext(local.appData, authUserForFailure?.id ?? null),
+      shouldPersist: true,
+      storageMode: "supabase",
+      syncWarning: describeSupabaseError(
+        error,
+        "Supabase is configured, but household data could not be loaded.",
+      ),
     };
   }
 }
@@ -995,7 +1131,8 @@ export async function syncAppData(nextData: AppData): Promise<SharedCommitResult
       return {
         appData: nextData,
         ok,
-        storageMode: "local",
+        storageMode: "supabase",
+        message: "Sign in before syncing household data.",
       };
     }
 
@@ -1004,7 +1141,8 @@ export async function syncAppData(nextData: AppData): Promise<SharedCommitResult
       return {
         appData: nextData,
         ok,
-        storageMode: "local",
+        storageMode: "supabase",
+        message: "Parent household profile was not found. Household sync did not run.",
       };
     }
 
@@ -1018,11 +1156,15 @@ export async function syncAppData(nextData: AppData): Promise<SharedCommitResult
       storageMode: "supabase",
     };
   } catch (error) {
-    console.warn("[Earned] Chore sync failed. Keeping local copy only.", error);
+    console.warn("[Earned] Chore sync failed.", error);
     return {
       appData: nextData,
       ok,
-      storageMode: "local",
+      storageMode: "supabase",
+      message: describeSupabaseError(
+        error,
+        "Supabase household sync failed. Local changes remain in this browser until sync succeeds.",
+      ),
     };
   }
 }
@@ -1034,6 +1176,7 @@ export async function pullAppDataSnapshot(localAppData: AppData): Promise<Shared
       appData: null,
       ok: false,
       storageMode: "local",
+      message: authBootstrap.setupWarning ?? "Supabase is not configured yet.",
     };
   }
 
@@ -1053,6 +1196,7 @@ export async function pullAppDataSnapshot(localAppData: AppData): Promise<Shared
         appData: withSupabaseSessionContext(localAppData, authUser.id),
         ok: true,
         storageMode: "supabase",
+        message: "Your account is signed in, but no parent household profile was found yet.",
       };
     }
 
@@ -1069,7 +1213,11 @@ export async function pullAppDataSnapshot(localAppData: AppData): Promise<Shared
     return {
       appData: null,
       ok: false,
-      storageMode: "local",
+      storageMode: "supabase",
+      message: describeSupabaseError(
+        error,
+        "Supabase household refresh failed. Refresh again after fixing the database issue.",
+      ),
     };
   }
 }
@@ -1096,6 +1244,7 @@ export async function signUpParentWithHousehold(
   if (!displayName || !householdName || !email || !draft.password.trim()) {
     return {
       appData: localAppData,
+      authState: "auth_error",
       ok: false,
       storageMode: "supabase",
       message: "Please complete every field before creating a household.",
@@ -1115,6 +1264,7 @@ export async function signUpParentWithHousehold(
     }
     return {
       appData,
+      authState: "ready",
       ok: true,
       storageMode: "local",
       message: `Local beta test household ${householdName} is ready. Supabase signup was skipped.`,
@@ -1125,6 +1275,7 @@ export async function signUpParentWithHousehold(
   if (!supabase) {
     return {
       appData: localAppData,
+      authState: "auth_error",
       ok: false,
       storageMode: "local",
       message: "Supabase is not configured yet.",
@@ -1160,6 +1311,7 @@ export async function signUpParentWithHousehold(
   if (signUpResult.error) {
     return {
       appData: localAppData,
+      authState: "auth_error",
       ok: false,
       storageMode: "supabase",
       message: getSignupErrorMessage(signUpResult.error),
@@ -1186,6 +1338,7 @@ export async function signUpParentWithHousehold(
     });
     return {
       appData: localAppData,
+      authState: "awaiting_email_confirmation",
       ok: false,
       storageMode: "supabase",
       message: getEmailConfirmationMessage(email),
@@ -1195,60 +1348,79 @@ export async function signUpParentWithHousehold(
   if (!authUser) {
     return {
       appData: localAppData,
+      authState: "auth_error",
       ok: false,
       storageMode: "supabase",
       message: "Signed up, but no auth user was returned. Try logging in after confirming the email.",
     };
   }
 
-  const existingGraph = await loadRemoteHouseholdGraph(authUser);
-  if (existingGraph) {
-    const remoteState = await loadRemoteChoreState(existingGraph.household.id);
-    const merged = mergeRemoteHouseholdIntoLocal(localAppData, existingGraph, authUser, remoteState);
+  try {
+    const existingGraph = await loadRemoteHouseholdGraph(authUser);
+    if (existingGraph) {
+      const remoteState = await loadRemoteChoreState(existingGraph.household.id);
+      const merged = mergeRemoteHouseholdIntoLocal(localAppData, existingGraph, authUser, remoteState);
+      writeAppData(merged);
+      clearPendingParentSignup();
+      return {
+        appData: merged,
+        authState: "ready",
+        ok: true,
+        storageMode: "supabase",
+        message: `Signed in to existing household ${existingGraph.household.name}.`,
+      };
+    }
+
+    const created = await createRemoteParentHousehold(authUser, {
+      displayName,
+      email,
+      householdName,
+    });
+    if (created.message) {
+      return {
+        appData: localAppData,
+        authState: created.authState,
+        ok: false,
+        storageMode: "supabase",
+        message: created.message,
+      };
+    }
+
+    const graph = created.graph;
+    if (!graph) {
+      return {
+        appData: localAppData,
+        authState: created.authState,
+        ok: false,
+        storageMode: "supabase",
+        message: "Household was created, but the account profile could not be reloaded.",
+      };
+    }
+
+    const remoteState = await loadRemoteChoreState(graph.household.id);
+    const merged = mergeRemoteHouseholdIntoLocal(localAppData, graph, authUser, remoteState);
     writeAppData(merged);
     clearPendingParentSignup();
     return {
       appData: merged,
+      authState: "ready",
       ok: true,
       storageMode: "supabase",
-      message: `Signed in to existing household ${existingGraph.household.name}.`,
+      message: `Household ${created.household?.name ?? graph.household.name} is ready.`,
     };
-  }
-
-  const created = await createRemoteParentHousehold(authUser, {
-    displayName,
-    email,
-    householdName,
-  });
-  if (created.message) {
+  } catch (error) {
+    console.warn("[Earned auth] Household bootstrap failed after signup.", error);
     return {
       appData: localAppData,
+      authState: getDatabaseAuthState(error),
       ok: false,
       storageMode: "supabase",
-      message: created.message,
+      message: describeSupabaseError(
+        error,
+        "Account was created, but household setup could not finish.",
+      ),
     };
   }
-
-  const graph = created.graph;
-  if (!graph) {
-    return {
-      appData: localAppData,
-      ok: false,
-      storageMode: "supabase",
-      message: "Household was created, but the account profile could not be reloaded.",
-    };
-  }
-
-  const remoteState = await loadRemoteChoreState(graph.household.id);
-  const merged = mergeRemoteHouseholdIntoLocal(localAppData, graph, authUser, remoteState);
-  writeAppData(merged);
-  clearPendingParentSignup();
-  return {
-    appData: merged,
-    ok: true,
-    storageMode: "supabase",
-    message: `Household ${created.household?.name ?? graph.household.name} is ready.`,
-  };
 }
 
 export async function signInParent(
@@ -1259,6 +1431,7 @@ export async function signInParent(
   if (!supabase) {
     return {
       appData: localAppData,
+      authState: "auth_error",
       ok: false,
       storageMode: "local",
       message: "Supabase is not configured yet.",
@@ -1273,9 +1446,10 @@ export async function signInParent(
   if (signInResult.error) {
     return {
       appData: localAppData,
+      authState: "auth_error",
       ok: false,
       storageMode: "supabase",
-      message: signInResult.error.message,
+      message: getLoginErrorMessage(signInResult.error),
     };
   }
 
@@ -1289,61 +1463,82 @@ export async function signInParent(
   if (!authUser) {
     return {
       appData: localAppData,
+      authState: "auth_error",
       ok: false,
       storageMode: "supabase",
       message: "Signed in, but no active session was returned.",
     };
   }
 
-  const graph = await loadRemoteHouseholdGraph(authUser);
-  if (!graph) {
-    const pendingSignup = readPendingParentSignup(authUser.email ?? draft.email);
-    if (pendingSignup) {
-      const created = await createRemoteParentHousehold(authUser, pendingSignup);
-      if (created.graph) {
-        const remoteState = await loadRemoteChoreState(created.graph.household.id);
-        const merged = mergeRemoteHouseholdIntoLocal(
-          localAppData,
-          created.graph,
-          authUser,
-          remoteState,
-        );
-        writeAppData(merged);
-        clearPendingParentSignup();
+  try {
+    const graph = await loadRemoteHouseholdGraph(authUser);
+    if (!graph) {
+      const pendingSignup = readPendingParentSignup(authUser.email ?? draft.email);
+      if (pendingSignup) {
+        const created = await createRemoteParentHousehold(authUser, pendingSignup);
+        if (created.graph) {
+          const remoteState = await loadRemoteChoreState(created.graph.household.id);
+          const merged = mergeRemoteHouseholdIntoLocal(
+            localAppData,
+            created.graph,
+            authUser,
+            remoteState,
+          );
+          writeAppData(merged);
+          clearPendingParentSignup();
+          return {
+            appData: merged,
+            authState: "ready",
+            ok: true,
+            storageMode: "supabase",
+            message: `Household ${created.household?.name ?? created.graph.household.name} is ready.`,
+          };
+        }
+
         return {
-          appData: merged,
-          ok: true,
+          appData: localAppData,
+          authState: created.authState,
+          ok: false,
           storageMode: "supabase",
-          message: `Household ${created.household?.name ?? created.graph.household.name} is ready.`,
+          message:
+            created.message ??
+            "Signed in, but the pending household setup could not be completed.",
         };
       }
 
       return {
         appData: localAppData,
+        authState: "household_missing",
         ok: false,
         storageMode: "supabase",
-        message: created.message ?? "Signed in, but the pending household setup could not be completed.",
+        message: "This account is signed in, but no household profile was found.",
       };
     }
 
+    const remoteState = await loadRemoteChoreState(graph.household.id);
+    const merged = mergeRemoteHouseholdIntoLocal(localAppData, graph, authUser, remoteState);
+    writeAppData(merged);
+    clearPendingParentSignup();
+    return {
+      appData: merged,
+      authState: "ready",
+      ok: true,
+      storageMode: "supabase",
+      message: `Signed in to ${graph.household.name}.`,
+    };
+  } catch (error) {
+    console.warn("[Earned auth] Household bootstrap failed after login.", error);
     return {
       appData: localAppData,
+      authState: getDatabaseAuthState(error),
       ok: false,
       storageMode: "supabase",
-      message: "This account is signed in, but no household profile was found.",
+      message: describeSupabaseError(
+        error,
+        "Signed in, but household data could not be loaded.",
+      ),
     };
   }
-
-  const remoteState = await loadRemoteChoreState(graph.household.id);
-  const merged = mergeRemoteHouseholdIntoLocal(localAppData, graph, authUser, remoteState);
-  writeAppData(merged);
-  clearPendingParentSignup();
-  return {
-    appData: merged,
-    ok: true,
-    storageMode: "supabase",
-    message: `Signed in to ${graph.household.name}.`,
-  };
 }
 
 export async function signOutParent(localAppData: AppData): Promise<ParentAuthResult> {
@@ -1351,6 +1546,7 @@ export async function signOutParent(localAppData: AppData): Promise<ParentAuthRe
   if (!supabase) {
     return {
       appData: localAppData,
+      authState: "auth_error",
       ok: false,
       storageMode: "local",
       message: "Supabase is not configured yet.",
@@ -1361,6 +1557,7 @@ export async function signOutParent(localAppData: AppData): Promise<ParentAuthRe
   if (error) {
     return {
       appData: localAppData,
+      authState: "auth_error",
       ok: false,
       storageMode: "supabase",
       message: error.message,
@@ -1379,6 +1576,7 @@ export async function signOutParent(localAppData: AppData): Promise<ParentAuthRe
   writeAppData(signedOut);
   return {
     appData: signedOut,
+    authState: "signed_out",
     ok: true,
     storageMode: "supabase",
     message: "Signed out.",
