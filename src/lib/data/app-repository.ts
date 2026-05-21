@@ -77,10 +77,12 @@ type ProfileRow = {
 };
 
 type ChildRow = {
+  child_access_token?: string | null;
   created_at: string;
   display_name: string;
   household_id: string;
   id: string;
+  login_code?: string | null;
   parent_profile_id: string | null;
   profile_id: string | null;
   updated_at: string;
@@ -147,6 +149,14 @@ type RemoteSyncShape = {
   chores: Chore[];
 };
 
+type ChildDeviceBootstrapPayload = {
+  child: ChildRow;
+  chores: RemoteChoreRow[];
+  completions: RemoteCompletionRow[];
+  household: HouseholdRow;
+  parentProfile: ProfileRow | null;
+};
+
 type PendingParentSignup = {
   displayName: string;
   email: string;
@@ -210,6 +220,12 @@ export type ChildCreateResult = {
   ok: boolean;
   storageMode: DataBackendMode;
 };
+
+export type ChildCreateDraft = {
+  name: string;
+};
+
+export type ChildDeviceLinkResult = ParentAuthResult;
 
 function getRepositoryHouseholdId(appData: AppData) {
   return getHouseholdId(appData);
@@ -333,6 +349,16 @@ function makeLocalId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function makeChildAccessToken() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return `child_${crypto.randomUUID()}_${crypto.randomUUID()}`;
+  }
+
+  return `child_${Date.now()}_${Math.random().toString(36).slice(2)}_${Math.random()
+    .toString(36)
+    .slice(2)}`;
+}
+
 function toUsername(source: string) {
   const normalized = source
     .toLowerCase()
@@ -349,10 +375,6 @@ function createLocalAuthTestAppData(
   const householdId = makeLocalId("beta-household");
   const authUserId = makeLocalId("beta-auth-user");
   const parentProfileId = makeLocalId("beta-profile");
-  const childProfileId = makeLocalId("beta-child");
-  const childUserId = makeLocalId("beta-child-user");
-  const childName = "Child";
-
   return {
     ...localAppData,
     households: [
@@ -387,29 +409,8 @@ function createLocalAuthTestAppData(
         created_at: timestamp,
         updated_at: timestamp,
       },
-      {
-        id: childUserId,
-        household_id: householdId,
-        auth_user_id: null,
-        name: childName,
-        username: toUsername(childName),
-        email: null,
-        role: "child",
-        created_at: timestamp,
-        updated_at: timestamp,
-      },
     ],
-    childProfiles: [
-      {
-        id: childProfileId,
-        household_id: householdId,
-        parent_id: authUserId,
-        name: childName,
-        user_id: childUserId,
-        created_at: timestamp,
-        updated_at: timestamp,
-      },
-    ],
+    childProfiles: [],
     chores: [],
     checkIns: [],
     payouts: [],
@@ -489,6 +490,7 @@ function buildChildProfile(row: ChildRow, parentUserId: string): ChildProfile {
     parent_id: parentUserId,
     name: row.display_name,
     user_id: `child-user-${row.id}`,
+    access_token: row.child_access_token ?? row.login_code ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -739,7 +741,7 @@ async function loadRemoteHouseholdGraph(authUser: AuthSessionUser): Promise<Hous
 
   const { data: children, error: childrenError } = await supabase
     .from("children")
-    .select("id, household_id, profile_id, parent_profile_id, display_name, created_at, updated_at")
+    .select("id, household_id, profile_id, parent_profile_id, display_name, child_access_token, created_at, updated_at")
     .eq("household_id", parentProfile.household_id)
     .order("created_at", { ascending: true })
     .returns<ChildRow[]>();
@@ -1039,6 +1041,46 @@ async function syncRemoteChoreState(
   }
 }
 
+async function syncRemoteChildDeviceState(
+  nextData: AppData,
+  childProfile: ChildProfile,
+): Promise<AppData | null> {
+  const supabase = getSupabaseBrowserClient();
+  const accessToken = childProfile.access_token;
+  if (!supabase || !accessToken) {
+    return null;
+  }
+
+  const childChores = nextData.chores.filter((chore) => chore.child_id === childProfile.id);
+  const childCheckIns = nextData.checkIns.filter((entry) => entry.child_id === childProfile.id);
+  const { data, error } = await supabase.rpc("sync_child_device_state", {
+    access_token: accessToken,
+    chore_rows: childChores.map((chore) => ({
+      client_id: chore.id,
+      rejection_note: chore.rejection_note,
+      status: chore.status,
+      submitted_at: chore.submitted_at,
+    })),
+    completion_rows: childCheckIns.map((entry) => ({
+      chore_client_id: entry.chore_id,
+      client_id: entry.id,
+      completion_date: entry.check_in_date,
+      status: "submitted",
+      submitted_at: entry.submitted_at,
+    })),
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  return mergeChildDeviceLinkIntoLocal(nextData, data as ChildDeviceBootstrapPayload);
+}
+
 export function getAuthBootstrapState(): AuthBootstrapState {
   const envState = getSupabaseEnvState();
   return {
@@ -1122,6 +1164,32 @@ export async function syncAppData(nextData: AppData): Promise<SharedCommitResult
       appData: nextData,
       ok,
       storageMode: "local",
+    };
+  }
+
+  const activeUser = nextData.users.find((user) => user.id === nextData.session.currentUserId);
+  if (activeUser?.role === "child") {
+    try {
+      const childProfile = nextData.childProfiles.find((profile) => profile.user_id === activeUser.id);
+      const syncedChildData = childProfile
+        ? await syncRemoteChildDeviceState(nextData, childProfile)
+        : null;
+      if (syncedChildData) {
+        writeAppData(syncedChildData);
+        return {
+          appData: syncedChildData,
+          ok: true,
+          storageMode: "supabase",
+        };
+      }
+    } catch (error) {
+      console.warn("[Earned] Child device sync failed.", error);
+    }
+
+    return {
+      appData: nextData,
+      ok,
+      storageMode: "supabase",
     };
   }
 
@@ -1584,9 +1652,16 @@ export async function signOutParent(localAppData: AppData): Promise<ParentAuthRe
 }
 
 export async function createChildRecord(
-  childName: string,
+  childDraft: string | ChildCreateDraft,
   localAppData: AppData,
 ): Promise<ChildCreateResult> {
+  const name = typeof childDraft === "string" ? childDraft : childDraft.name;
+  const accessToken = makeChildAccessToken();
+
+  if (isEarnedItAuthTestModeEnabled() || localAppData.session.authMode === "demo") {
+    return createLocalChildRecord(name, accessToken, localAppData);
+  }
+
   const supabase = getSupabaseBrowserClient();
   if (!supabase) {
     return {
@@ -1617,7 +1692,7 @@ export async function createChildRecord(
     };
   }
 
-  const trimmedName = childName.trim();
+  const trimmedName = name.trim();
   if (!trimmedName) {
     return {
       appData: localAppData,
@@ -1632,6 +1707,7 @@ export async function createChildRecord(
     household_id: graph.household.id,
     parent_profile_id: graph.parentProfile.id,
     display_name: trimmedName,
+    child_access_token: accessToken,
     created_at: timestamp,
     updated_at: timestamp,
   });
@@ -1668,6 +1744,276 @@ export async function createChildRecord(
     ok: true,
     storageMode: "supabase",
     message: `${trimmedName} was added to ${refreshedGraph.household.name}.`,
+  };
+}
+
+function createLocalChildRecord(
+  childName: string,
+  accessToken: string,
+  localAppData: AppData,
+): ChildCreateResult {
+  const trimmedName = childName.trim();
+  if (!trimmedName) {
+    return {
+      appData: localAppData,
+      ok: false,
+      storageMode: "local",
+      message: "Enter a child name first.",
+    };
+  }
+
+  const parentUser = localAppData.users.find((user) => user.role === "parent");
+  const householdId = localAppData.session.currentHouseholdId ?? localAppData.households[0]?.id;
+  if (!parentUser || !householdId) {
+    return {
+      appData: localAppData,
+      ok: false,
+      storageMode: "local",
+      message: "Parent household profile was not found.",
+    };
+  }
+
+  const timestamp = getCurrentTimestamp();
+  const childId = makeLocalId("beta-child");
+  const childUserId = makeLocalId("beta-child-user");
+  const childProfile: ChildProfile = {
+    id: childId,
+    household_id: householdId,
+    parent_id: parentUser.id,
+    name: trimmedName,
+    user_id: childUserId,
+    access_token: accessToken,
+    created_at: timestamp,
+    updated_at: timestamp,
+  };
+  const childUser = buildChildUser(childProfile);
+  const appData = {
+    ...localAppData,
+    users: [...localAppData.users.filter((user) => user.id !== childUser.id), childUser],
+    childProfiles: [...localAppData.childProfiles, childProfile],
+  };
+
+  writeAppData(appData);
+  return {
+    appData,
+    ok: true,
+    storageMode: "local",
+    message: `${trimmedName} was added to ${localAppData.households[0]?.name ?? "this household"}.`,
+  };
+}
+
+function signInChildProfile(
+  childProfile: ChildProfile,
+  localAppData: AppData,
+): AppData {
+  const childUser =
+    localAppData.users.find((user) => user.id === childProfile.user_id) ??
+    buildChildUser(childProfile);
+
+  return setCurrentUser(
+    {
+      ...localAppData,
+      users: localAppData.users.some((user) => user.id === childUser.id)
+        ? localAppData.users
+        : [...localAppData.users, childUser],
+      session: {
+        ...localAppData.session,
+        currentHouseholdId: childProfile.household_id,
+      },
+    },
+    childUser.id,
+  );
+}
+
+function mergeChildDeviceLinkIntoLocal(
+  localAppData: AppData,
+  payload: ChildDeviceBootstrapPayload,
+): AppData {
+  const parentUserId =
+    payload.parentProfile?.user_id ?? payload.parentProfile?.id ?? `parent-${payload.household.id}`;
+  const childProfile = buildChildProfile(payload.child, parentUserId);
+  const childUser = buildChildUser(childProfile);
+  const remoteChoresById = new Map((payload.chores ?? []).map((chore) => [chore.id, chore]));
+  const chores = (payload.chores ?? []).map(hydrateRemoteChore);
+  const checkIns = (payload.completions ?? [])
+    .map((completion) => hydrateRemoteCompletion(completion, remoteChoresById))
+    .filter((entry): entry is CheckIn => Boolean(entry));
+
+  return signInChildProfile(childProfile, {
+    ...localAppData,
+    households: [payload.household],
+    profiles: payload.parentProfile ? [payload.parentProfile] : [],
+    users: [childUser],
+    childProfiles: [childProfile],
+    chores,
+    checkIns,
+    payouts: [],
+    session: {
+      currentUserId: childUser.id,
+      currentHouseholdId: payload.household.id,
+      authUserId: null,
+      authMode: "supabase",
+    },
+  });
+}
+
+export async function signInChildWithDeviceLink(
+  accessToken: string,
+  localAppData: AppData,
+): Promise<ChildDeviceLinkResult> {
+  const token = accessToken.trim();
+  const localChildProfile = localAppData.childProfiles.find(
+    (profile) => profile.access_token === token,
+  );
+
+  if (localChildProfile) {
+    const appData = signInChildProfile(localChildProfile, localAppData);
+    writeAppData(appData);
+    return {
+      appData,
+      authState: "ready",
+      ok: true,
+      storageMode: appData.session.authMode === "supabase" ? "supabase" : "local",
+      message: `Signed in as ${localChildProfile.name}.`,
+    };
+  }
+
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) {
+    return {
+      appData: localAppData,
+      authState: "auth_error",
+      ok: false,
+      storageMode: "local",
+      message: "Child link could not be opened because Supabase is not configured.",
+    };
+  }
+
+  const { data, error } = await supabase.rpc("bootstrap_child_device", {
+    access_token: token,
+  });
+
+  if (error) {
+    return {
+      appData: localAppData,
+      authState: getDatabaseAuthState(error),
+      ok: false,
+      storageMode: "supabase",
+      message: describeSupabaseError(error, "Child link could not be opened."),
+    };
+  }
+
+  if (!data) {
+    return {
+      appData: localAppData,
+      authState: "auth_error",
+      ok: false,
+      storageMode: "supabase",
+      message: "This child link is no longer valid. Ask a parent to show the QR again.",
+    };
+  }
+
+  const appData = mergeChildDeviceLinkIntoLocal(
+    localAppData,
+    data as ChildDeviceBootstrapPayload,
+  );
+  writeAppData(appData);
+
+  const childName = appData.childProfiles[0]?.name?.trim() || "your child";
+  return {
+    appData,
+    authState: "ready",
+    ok: true,
+    storageMode: "supabase",
+    message: `Signed in as ${childName}.`,
+  };
+}
+
+export async function regenerateChildDeviceLink(
+  childId: string,
+  localAppData: AppData,
+): Promise<ChildCreateResult> {
+  const accessToken = makeChildAccessToken();
+
+  if (isEarnedItAuthTestModeEnabled() || localAppData.session.authMode === "demo") {
+    const nextData = {
+      ...localAppData,
+      childProfiles: localAppData.childProfiles.map((profile) =>
+        profile.id === childId
+          ? {
+              ...profile,
+              access_token: accessToken,
+              updated_at: getCurrentTimestamp(),
+            }
+          : profile,
+      ),
+    };
+    writeAppData(nextData);
+    return {
+      appData: nextData,
+      ok: true,
+      storageMode: "local",
+      message: "Child QR link was regenerated.",
+    };
+  }
+
+  const supabase = getSupabaseBrowserClient();
+  const authUser = await getSignedInAuthUser();
+  if (!supabase || !authUser) {
+    return {
+      appData: localAppData,
+      ok: false,
+      storageMode: "supabase",
+      message: "Sign in as a parent before regenerating child links.",
+    };
+  }
+
+  const graph = await loadRemoteHouseholdGraph(authUser);
+  if (!graph) {
+    return {
+      appData: localAppData,
+      ok: false,
+      storageMode: "supabase",
+      message: "Parent household profile was not found.",
+    };
+  }
+
+  const { error } = await supabase
+    .from("children")
+    .update({
+      child_access_token: accessToken,
+      updated_at: getCurrentTimestamp(),
+    })
+    .eq("id", childId)
+    .eq("household_id", graph.household.id);
+
+  if (error) {
+    return {
+      appData: localAppData,
+      ok: false,
+      storageMode: "supabase",
+      message: error.message,
+    };
+  }
+
+  const refreshedGraph = await loadRemoteHouseholdGraph(authUser);
+  if (!refreshedGraph) {
+    return {
+      appData: localAppData,
+      ok: false,
+      storageMode: "supabase",
+      message: "Child link was regenerated, but the household could not be refreshed.",
+    };
+  }
+
+  const remoteState = await loadRemoteChoreState(refreshedGraph.household.id);
+  const appData = mergeRemoteHouseholdIntoLocal(localAppData, refreshedGraph, authUser, remoteState);
+  writeAppData(appData);
+  return {
+    appData,
+    ok: true,
+    storageMode: "supabase",
+    message: "Child QR link was regenerated.",
   };
 }
 

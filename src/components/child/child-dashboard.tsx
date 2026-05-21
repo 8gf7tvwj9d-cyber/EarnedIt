@@ -124,7 +124,7 @@ export function ChildDashboard({
     treeLoadFailed = true;
     console.warn("[Earned] Tree progress failed to load. Falling back to seedling.", error);
   }
-  const childDisplayName = childProfile.name === "Child" ? "Cynthia" : childProfile.name;
+  const childDisplayName = childProfile.name.trim() || "your child";
   const sortedPayouts = [...payouts].sort((left, right) =>
     paidHistorySortOrder === "newest"
       ? right.paid_at.localeCompare(left.paid_at)
@@ -442,7 +442,7 @@ export function ChildDashboard({
             count={`${payouts.length} payments`}
             icon="seed"
             isOpen={openSections.paymentHistory}
-            title={`Payment History for ${childProfile.name}`}
+            title={`Payment History for ${childDisplayName}`}
             onOpenChange={(next) => setSectionOpen("paymentHistory", next)}
           >
             <>

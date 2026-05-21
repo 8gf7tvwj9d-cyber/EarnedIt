@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
+import QRCode from "qrcode";
 import { ChoreComposer } from "@/components/parent/chore-composer";
 import { ChoreGroup } from "@/components/parent/chore-group";
 import { PaymentReviewSheet } from "@/components/parent/payment-review-sheet";
@@ -39,19 +40,17 @@ import {
   ChildProfile,
   Payout,
   PaymentLineItem,
-  User,
   WeekdayKey,
 } from "@/types/app";
 
 type ParentDashboardProps = {
-  currentUser: User;
-  authMode?: "demo" | "supabase";
   childProfiles: ChildProfile[];
   chores: Chore[];
   checkIns: CheckIn[];
   householdName?: string | null;
   payouts: Payout[];
-  onCreateChild?: (name: string) => Promise<{ ok: boolean; message: string }>;
+  onCreateChild?: (draft: { name: string }) => Promise<{ ok: boolean; message: string }>;
+  onRegenerateChildLink?: (childId: string) => Promise<{ ok: boolean; message: string }>;
   onSaveChore: (draft: ChoreDraft) => void;
   onDeleteChore: (choreId: string) => void;
   onApprove: (choreId: string) => void;
@@ -96,14 +95,13 @@ function getDefaultParentSections() {
 }
 
 export function ParentDashboard({
-  currentUser,
-  authMode = "demo",
   childProfiles,
   chores,
   checkIns,
   householdName = null,
   payouts,
   onCreateChild,
+  onRegenerateChildLink,
   onSaveChore,
   onDeleteChore,
   onApprove,
@@ -126,6 +124,9 @@ export function ParentDashboard({
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
   const [childNameDraft, setChildNameDraft] = useState("");
   const [childSetupMessage, setChildSetupMessage] = useState<string | null>(null);
+  const [selectedChildId, setSelectedChildId] = useState<string>("all");
+  const [qrChildId, setQrChildId] = useState<string | null>(null);
+  const [isRegeneratingChildId, setIsRegeneratingChildId] = useState<string | null>(null);
   const [isSavingChild, setIsSavingChild] = useState(false);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => {
     if (typeof window === "undefined") {
@@ -141,33 +142,56 @@ export function ParentDashboard({
   });
   const [lightboxImage, setLightboxImage] = useState<{ alt: string; src: string } | null>(null);
 
-  const availableActive = chores.filter((chore) => {
-    const status = getComputedStatus(chore, checkIns);
+  const selectedChildProfiles =
+    selectedChildId === "all"
+      ? childProfiles
+      : childProfiles.filter((child) => child.id === selectedChildId);
+  const selectedChildIds = new Set(selectedChildProfiles.map((child) => child.id));
+  const scopedChores =
+    selectedChildId === "all"
+      ? chores
+      : chores.filter((chore) => selectedChildIds.has(chore.child_id));
+  const scopedCheckIns =
+    selectedChildId === "all"
+      ? checkIns
+      : checkIns.filter((entry) => selectedChildIds.has(entry.child_id));
+  const scopedPayouts =
+    selectedChildId === "all"
+      ? payouts
+      : payouts.filter((payout) => selectedChildIds.has(payout.child_id));
+  const heroHouseholdName = householdName?.trim();
+  const selectedChildLabel =
+    selectedChildId === "all"
+      ? "All child profiles"
+      : selectedChildProfiles[0]?.name?.trim() || "child profile";
+
+  const availableActive = scopedChores.filter((chore) => {
+    const status = getComputedStatus(chore, scopedCheckIns);
     if (isOptionalInstanceChore(chore)) {
       return status === "rejected";
     }
     return status === "available" || status === "rejected";
   });
-  const awaitingApproval = chores.filter(
+  const awaitingApproval = scopedChores.filter(
     (chore) =>
-      !isOptionalTemplateChore(chore) && getComputedStatus(chore, checkIns) === "submitted",
+      !isOptionalTemplateChore(chore) && getComputedStatus(chore, scopedCheckIns) === "submitted",
   );
-  const approvedCompleted = chores.filter(
+  const approvedCompleted = scopedChores.filter(
     (chore) =>
-      !isOptionalTemplateChore(chore) && getComputedStatus(chore, checkIns) === "approved",
+      !isOptionalTemplateChore(chore) && getComputedStatus(chore, scopedCheckIns) === "approved",
   );
-  const paidChores = chores.filter(
-    (chore) => !isOptionalTemplateChore(chore) && getComputedStatus(chore, checkIns) === "paid",
+  const paidChores = scopedChores.filter(
+    (chore) => !isOptionalTemplateChore(chore) && getComputedStatus(chore, scopedCheckIns) === "paid",
   );
-  const missedExpired = chores.filter(
+  const missedExpired = scopedChores.filter(
     (chore) =>
-      !isOptionalTemplateChore(chore) && getComputedStatus(chore, checkIns) === "expired",
+      !isOptionalTemplateChore(chore) && getComputedStatus(chore, scopedCheckIns) === "expired",
   );
   const totalUnpaidBalance = approvedCompleted.reduce((sum, chore) => sum + chore.amount_cents, 0);
   const clearableProgressCount =
-    checkIns.length +
-    payouts.length +
-    chores.filter(
+    scopedCheckIns.length +
+    scopedPayouts.length +
+    scopedChores.filter(
       (chore) =>
         isOptionalInstanceChore(chore) ||
         chore.proof_entries.length > 0 ||
@@ -177,7 +201,7 @@ export function ParentDashboard({
     approvedCompleted.length +
     paidChores.length +
     missedExpired.length;
-  const recentPayouts = [...payouts]
+  const recentPayouts = [...scopedPayouts]
     .sort((left, right) => right.paid_at.localeCompare(left.paid_at))
     .slice(0, 3);
 
@@ -217,17 +241,6 @@ export function ParentDashboard({
 
     composerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [draft.id, isComposerOpen]);
-
-  useEffect(() => {
-    if (draft.childId || childProfiles.length === 0) {
-      return;
-    }
-
-    setDraft((current) => ({
-      ...current,
-      childId: childProfiles[0]?.id ?? "",
-    }));
-  }, [childProfiles, draft.childId]);
 
   useEffect(() => {
     window.sessionStorage.setItem(
@@ -465,7 +478,8 @@ export function ParentDashboard({
   }
 
   function submitDraft() {
-    if (!draft.title.trim() || !draft.amount || !draft.childId) {
+    const childId = draft.childId || childProfiles[0]?.id || "";
+    if (!draft.title.trim() || !draft.amount || !childId) {
       return;
     }
 
@@ -477,7 +491,10 @@ export function ParentDashboard({
       return;
     }
 
-    onSaveChore(draft);
+    onSaveChore({
+      ...draft,
+      childId,
+    });
     resetDraft();
   }
 
@@ -488,7 +505,9 @@ export function ParentDashboard({
 
     setIsSavingChild(true);
     try {
-      const result = await onCreateChild(childNameDraft);
+      const result = await onCreateChild({
+        name: childNameDraft,
+      });
       setChildSetupMessage(result.message);
       if (result.ok) {
         setChildNameDraft("");
@@ -498,12 +517,26 @@ export function ParentDashboard({
     }
   }
 
+  async function handleRegenerateChildLink(childId: string) {
+    if (!onRegenerateChildLink) {
+      return;
+    }
+
+    setIsRegeneratingChildId(childId);
+    try {
+      const result = await onRegenerateChildLink(childId);
+      setChildSetupMessage(result.message);
+    } finally {
+      setIsRegeneratingChildId(null);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <section className="grid gap-3 md:grid-cols-3">
         <SummaryCard accent="from-[#fff0cb] via-[#f1d790] to-[#fff9e8]" icon="seed" label="Approved, Unpaid" value={formatCurrency(totalUnpaidBalance)} copy="Approved rewards waiting for payment" />
         <SummaryCard accent="from-[#e4efd8] via-[#c9dfb4] to-[#fbf8ea]" icon="leaf" label="Pending Review" value={String(awaitingApproval.length)} copy="Submitted chores waiting for approval" />
-        <SummaryCard accent="from-[#f4e5bd] via-[#dfc06a] to-[#fff8df]" icon="sprout" label="Payment History" value={String(payouts.length)} copy="Completed payments on record" />
+        <SummaryCard accent="from-[#f4e5bd] via-[#dfc06a] to-[#fff8df]" icon="sprout" label="Payment History" value={String(scopedPayouts.length)} copy="Completed payments on record" />
       </section>
 
       <section className="space-y-4">
@@ -514,9 +547,11 @@ export function ParentDashboard({
                 <span className="kicker-icon"><AppIcon className="h-4 w-4" name="sprout" /></span>
                 Parent garden
               </div>
-              <h2 className="mt-2 font-mono text-3xl font-black">Manage chores for {currentUser.name}</h2>
+              <h2 className="mt-2 font-mono text-3xl font-black">
+                {heroHouseholdName ? `Manage chores for ${heroHouseholdName}` : "Manage household chores"}
+              </h2>
               <p className="mt-2 max-w-xl text-sm leading-6 text-slate-200">
-                Create chores, review submissions, and keep rewards and payments clear.
+                Create chores, review submissions, and keep rewards and payments clear for {selectedChildLabel}.
               </p>
             </div>
             <span className="label-chip label-chip-light">Parent manages approvals and payments</span>
@@ -542,7 +577,7 @@ export function ParentDashboard({
             />
 
             <div className="space-y-4">
-              {authMode === "supabase" ? (
+              {onCreateChild ? (
                 <div className="rounded-[24px] border border-white/14 bg-white/10 p-4 text-white">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
@@ -553,21 +588,65 @@ export function ParentDashboard({
                         {householdName ?? "Current household"}
                       </p>
                       <p className="mt-1 text-sm leading-6 text-slate-200">
-                        Parent auth is live. Child records created here stay inside this household.
+                        Child records created here stay inside this household.
                       </p>
                     </div>
                     <span className="label-chip label-chip-light">{childProfiles.length} children</span>
                   </div>
 
-                  <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-                    <input
-                      className="field-surface min-w-0 flex-1 rounded-2xl px-4 py-4 text-base text-[#2f271f]"
-                      placeholder="Add child name"
-                      value={childNameDraft}
-                      onChange={(event) => setChildNameDraft(event.target.value)}
-                    />
+                  {childProfiles.length === 0 ? (
+                    <div className="mt-4 rounded-[20px] border border-white/14 bg-white/10 px-4 py-4 text-sm font-bold text-white">
+                      Create a child profile to start assigning chores.
+                    </div>
+                  ) : (
+                    <div className="mt-4 space-y-2">
+                      <p className="text-xs font-black uppercase tracking-[0.16em] text-[#fff0cb]">
+                        Child profiles
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          className={`rounded-full px-3 py-2 text-sm font-black ${selectedChildId === "all" ? "hero-button-primary" : "hero-button-secondary"}`}
+                          onClick={() => setSelectedChildId("all")}
+                          type="button"
+                        >
+                          All children
+                        </button>
+                        {childProfiles.map((child) => (
+                          <span className="flex flex-wrap gap-2" key={child.id}>
+                            <button
+                              className={`rounded-full px-3 py-2 text-sm font-black ${selectedChildId === child.id ? "hero-button-primary" : "hero-button-secondary"}`}
+                              onClick={() => setSelectedChildId(child.id)}
+                              type="button"
+                            >
+                              {child.name.trim() || "child profile"}
+                            </button>
+                            <button
+                              className="hero-button-secondary rounded-full px-3 py-2 text-sm font-black"
+                              onClick={() => setQrChildId(child.id)}
+                              type="button"
+                            >
+                              QR
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto]">
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-black uppercase tracking-[0.16em] text-[#fff0cb]">
+                        Child name
+                      </span>
+                      <input
+                        className="field-surface min-w-0 flex-1 rounded-2xl px-4 py-4 text-base text-[#2f271f]"
+                        placeholder="Add child name"
+                        value={childNameDraft}
+                        onChange={(event) => setChildNameDraft(event.target.value)}
+                      />
+                    </label>
                     <button
-                      className="action-button rounded-2xl bg-gradient-to-r from-[#78a85a] via-[#91b85f] to-[#d5a642] px-5 py-4 text-base font-black text-[#231d16] shadow-lg shadow-[#3d2b12]/18"
+                      className="action-button self-end rounded-2xl bg-gradient-to-r from-[#78a85a] via-[#91b85f] to-[#d5a642] px-5 py-4 text-base font-black text-[#231d16] shadow-lg shadow-[#3d2b12]/18"
                       disabled={!onCreateChild || isSavingChild}
                       onClick={() => void handleCreateChild()}
                       type="button"
@@ -619,7 +698,7 @@ export function ParentDashboard({
                     <EmptyState copy="No chores are waiting for review right now." />
                   ) : (
                     awaitingApproval.map((chore) => (
-                      <ReviewCard key={chore.id} checkIns={checkIns} childName={childProfiles.find((child) => child.id === chore.child_id)?.name ?? "Unknown"} chore={chore} chores={chores} isRejecting={rejectingId === chore.id} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} rejectionNote={rejectionNote} onApprove={onApprove} onReject={onReject} onRejectingChange={setRejectingId} onRejectionNoteChange={setRejectionNote} />
+                      <ReviewCard key={chore.id} checkIns={scopedCheckIns} childName={childProfiles.find((child) => child.id === chore.child_id)?.name ?? "child profile"} chore={chore} chores={scopedChores} isRejecting={rejectingId === chore.id} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} rejectionNote={rejectionNote} onApprove={onApprove} onReject={onReject} onRejectingChange={setRejectingId} onRejectionNoteChange={setRejectionNote} />
                     ))
                   )}
                 </div>
@@ -652,7 +731,7 @@ export function ParentDashboard({
                       Review Payments
                     </button>
                   </div>
-                  <ChoreGroup allChores={chores} checkIns={checkIns} chores={approvedCompleted} onOverrideMissedStreak={onOverrideMissedStreak} childProfiles={childProfiles} isEmbedded onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Approved queue" />
+                  <ChoreGroup allChores={scopedChores} checkIns={scopedCheckIns} chores={approvedCompleted} onOverrideMissedStreak={onOverrideMissedStreak} childProfiles={childProfiles} isEmbedded onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Approved queue" />
                 </div>
               </DashboardSection>
             </div>
@@ -667,7 +746,7 @@ export function ParentDashboard({
             title="Available / Active"
             onOpenChange={(next) => setSectionOpen("active", next)}
           >
-            <ChoreGroup allChores={chores} checkIns={checkIns} chores={availableActive} onOverrideMissedStreak={onOverrideMissedStreak} childProfiles={childProfiles} isEmbedded onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Active chores" />
+            <ChoreGroup allChores={scopedChores} checkIns={scopedCheckIns} chores={availableActive} onOverrideMissedStreak={onOverrideMissedStreak} childProfiles={childProfiles} isEmbedded onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Active chores" />
           </DashboardSection>
 
           <DashboardSection
@@ -677,7 +756,7 @@ export function ParentDashboard({
             title="Paid"
             onOpenChange={(next) => setSectionOpen("paid", next)}
           >
-            <ChoreGroup allChores={chores} checkIns={checkIns} chores={paidChores} onOverrideMissedStreak={onOverrideMissedStreak} childProfiles={childProfiles} isEmbedded onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Paid chores" />
+            <ChoreGroup allChores={scopedChores} checkIns={scopedCheckIns} chores={paidChores} onOverrideMissedStreak={onOverrideMissedStreak} childProfiles={childProfiles} isEmbedded onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Paid chores" />
           </DashboardSection>
 
           <DashboardSection
@@ -687,12 +766,12 @@ export function ParentDashboard({
             title="Archived / Missed"
             onOpenChange={(next) => setSectionOpen("missed", next)}
           >
-            <ChoreGroup allChores={chores} checkIns={checkIns} chores={missedExpired} onOverrideMissedStreak={onOverrideMissedStreak} childProfiles={childProfiles} isEmbedded onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Missed / expired" />
+            <ChoreGroup allChores={scopedChores} checkIns={scopedCheckIns} chores={missedExpired} onOverrideMissedStreak={onOverrideMissedStreak} childProfiles={childProfiles} isEmbedded onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Missed / expired" />
           </DashboardSection>
         </div>
 
         <DashboardSection
-          count={formatCurrency(payouts.reduce((sum, payout) => sum + payout.amount_cents, 0))}
+          count={formatCurrency(scopedPayouts.reduce((sum, payout) => sum + payout.amount_cents, 0))}
           icon="seed"
           isOpen={openSections.paymentHistory}
           title="Payment History"
@@ -700,7 +779,7 @@ export function ParentDashboard({
         >
           <div className="space-y-3">
             {recentPayouts.length === 0 ? <EmptyState copy="No payments have been recorded yet." /> : recentPayouts.map((payout) => {
-              const payoutChores = chores.filter(
+              const payoutChores = scopedChores.filter(
                 (chore) =>
                   chore.child_id === payout.child_id &&
                   chore.status === "paid" &&
@@ -735,9 +814,9 @@ export function ParentDashboard({
       ) : null}
       {isPayoutCalendarOpen ? (
         <PayoutCalendarModal
-          checkIns={checkIns}
+          checkIns={scopedCheckIns}
           chores={paidChores}
-          payouts={payouts}
+          payouts={scopedPayouts}
           onClose={() => setIsPayoutCalendarOpen(false)}
         />
       ) : null}
@@ -753,6 +832,15 @@ export function ParentDashboard({
             setIsPaymentReviewOpen(false);
           }}
           onNotesChange={setPayoutNotes}
+        />
+      ) : null}
+      {qrChildId ? (
+        <ChildDeviceLinkModal
+          key={qrChildId}
+          childProfile={childProfiles.find((child) => child.id === qrChildId) ?? null}
+          isRegenerating={isRegeneratingChildId === qrChildId}
+          onClose={() => setQrChildId(null)}
+          onRegenerate={() => void handleRegenerateChildLink(qrChildId)}
         />
       ) : null}
     </div>
@@ -797,5 +885,106 @@ function DashboardSection({
         <div className="accordion-panel-inner px-3 pb-4 pt-2 sm:px-4">{children}</div>
       </div>
     </section>
+  );
+}
+
+function ChildDeviceLinkModal({
+  childProfile,
+  isRegenerating,
+  onClose,
+  onRegenerate,
+}: {
+  childProfile: ChildProfile | null;
+  isRegenerating: boolean;
+  onClose: () => void;
+  onRegenerate: () => void;
+}) {
+  const [qrImageUrl, setQrImageUrl] = useState<string | null>(null);
+  const childName = childProfile?.name.trim() || "your child";
+  const childLink =
+    typeof window !== "undefined" && childProfile?.access_token
+      ? `${window.location.origin}${window.location.pathname}?childLink=${encodeURIComponent(
+          childProfile.access_token,
+        )}`
+      : "";
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!childLink) {
+      return;
+    }
+
+    void QRCode.toDataURL(childLink, {
+      margin: 2,
+      scale: 7,
+      width: 260,
+    }).then((dataUrl) => {
+      if (!cancelled) {
+        setQrImageUrl(dataUrl);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [childLink]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#1e1a13]/48 px-3 py-4 backdrop-blur-sm sm:items-center">
+      <section className="w-full max-w-md overflow-hidden rounded-[30px] bg-[#fffaf0] shadow-[0_28px_80px_rgba(25,20,12,0.38)]">
+        <div className="payment-sheet-header px-5 py-5 text-white">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="section-kicker kicker-row">
+                <span className="kicker-icon">
+                  <AppIcon className="h-4 w-4" name="spark" />
+                </span>
+                Child device QR
+              </div>
+              <h3 className="mt-3 font-mono text-2xl font-black">{childName}</h3>
+            </div>
+            <button
+              className="hero-button-secondary rounded-full px-3 py-2 text-xs font-black"
+              onClick={onClose}
+              type="button"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-4 px-5 py-5 text-slate-900">
+          <div className="rounded-[26px] border border-[#d9c075]/50 bg-white p-4 text-center">
+            {qrImageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                alt={`Child device QR for ${childName}`}
+                className="mx-auto h-64 w-64 rounded-[18px]"
+                src={qrImageUrl}
+              />
+            ) : (
+              <div className="flex h-64 items-center justify-center rounded-[18px] bg-[#f8f0dc] text-sm font-bold text-slate-600">
+                QR unavailable
+              </div>
+            )}
+          </div>
+
+          <p className="text-sm leading-6 text-slate-700">
+            This QR opens only {childName}&apos;s child-safe chore view. Regenerating it revokes
+            the previous QR for this child.
+          </p>
+
+          <button
+            className="action-button w-full rounded-2xl border border-[#d9c075] bg-white px-5 py-4 text-base font-black text-[#3b301f] disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={!childProfile || isRegenerating}
+            onClick={onRegenerate}
+            type="button"
+          >
+            {isRegenerating ? "Regenerating..." : "Regenerate QR"}
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }

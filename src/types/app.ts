@@ -84,6 +84,7 @@ export type ChildProfile = {
   parent_id: string;
   name: string;
   user_id: string;
+  access_token?: string | null;
   created_at: string;
   updated_at: string;
 };

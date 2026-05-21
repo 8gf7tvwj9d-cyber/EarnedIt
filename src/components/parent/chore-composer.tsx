@@ -76,7 +76,13 @@ export function ChoreComposer({
 
       {!isComposerOpen && !draft.id ? (
         <div className="rounded-[24px] border border-white/14 bg-white/8 px-4 py-5 text-sm text-slate-200">
-          Tap <span className="font-black text-white">Add chore</span> when you want to create a new one.
+          {childProfiles.length === 0 ? (
+            "Create a child profile before assigning chores."
+          ) : (
+            <>
+              Tap <span className="font-black text-white">Add chore</span> when you want to create a new one.
+            </>
+          )}
         </div>
       ) : (
         <div className="space-y-6">
@@ -142,9 +148,10 @@ function ComposerBasicsSection({
           <input className="field-surface w-full rounded-2xl px-4 py-4 text-base text-[#2f271f]" inputMode="decimal" pattern="^[$]?[0-9]*([.][0-9]{0,2})?$" placeholder="10.00" type="text" value={draft.amount} onChange={(event) => onSetDraft((current) => ({ ...current, amount: event.target.value }))} />
         </InputLabel>
         <InputLabel dark label="Assigned child">
-          <select className="field-surface w-full rounded-2xl px-4 py-4 text-base text-[#2f271f]" value={draft.childId} onChange={(event) => onSetDraft((current) => ({ ...current, childId: event.target.value }))}>
+          <select className="field-surface w-full rounded-2xl px-4 py-4 text-base text-[#2f271f]" disabled={childProfiles.length === 0} value={draft.childId || childProfiles[0]?.id || ""} onChange={(event) => onSetDraft((current) => ({ ...current, childId: event.target.value }))}>
+            {childProfiles.length === 0 ? <option value="">Create a child profile first</option> : null}
             {childProfiles.map((child) => (
-              <option key={child.id} value={child.id}>{child.name}</option>
+              <option key={child.id} value={child.id}>{child.name.trim() || "child profile"}</option>
             ))}
           </select>
         </InputLabel>

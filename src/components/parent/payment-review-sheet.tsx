@@ -64,6 +64,8 @@ export function PaymentReviewSheet({
       });
   }, [chores, draftPayments]);
 
+  const selectedChildIds = Array.from(new Set(selectedItems.map((item) => item.chore.child_id)));
+  const hasMixedChildren = selectedChildIds.length > 1;
   const totalCents = selectedItems.reduce((sum, item) => sum + item.amountCents, 0);
 
   function updatePayment(choreId: string, patch: Partial<DraftPayment>) {
@@ -78,7 +80,7 @@ export function PaymentReviewSheet({
   }
 
   function confirmPayment() {
-    if (!primaryChildId || selectedItems.length === 0) {
+    if (!primaryChildId || selectedItems.length === 0 || hasMixedChildren) {
       return;
     }
 
@@ -119,6 +121,11 @@ export function PaymentReviewSheet({
               <p className="mt-1 text-xl font-black">{formatCurrency(totalCents)}</p>
             </div>
           </div>
+          {hasMixedChildren ? (
+            <p className="mt-3 rounded-2xl border border-[#ffd27d]/35 bg-[#fff8e7]/12 px-4 py-3 text-sm font-bold text-[#fff1c9]">
+              Select approved chores for one child at a time.
+            </p>
+          ) : null}
         </div>
 
         <div className="max-h-[68vh] space-y-3 overflow-y-auto px-4 py-4">
@@ -187,7 +194,7 @@ export function PaymentReviewSheet({
         <div className="border-t border-[#ddca9b] bg-[#fff8e6] px-4 py-4">
           <button
             className="action-button w-full rounded-2xl bg-gradient-to-r from-[#5f8f43] to-[#d8aa3d] px-5 py-4 text-base font-black text-[#231d16] shadow-lg shadow-[#3d2b12]/14 disabled:cursor-not-allowed disabled:opacity-55"
-            disabled={selectedItems.length === 0 || chores.length === 0}
+            disabled={selectedItems.length === 0 || chores.length === 0 || hasMixedChildren}
             onClick={confirmPayment}
             type="button"
           >

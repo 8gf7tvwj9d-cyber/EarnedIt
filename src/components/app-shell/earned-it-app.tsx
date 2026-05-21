@@ -26,16 +26,22 @@ import {
   pullAppDataSnapshot,
   rejectChore,
   resetLocalAppData,
+  regenerateChildDeviceLink,
   setActiveUser,
+  signInChildWithDeviceLink,
   signInParent,
   signOutParent,
   signUpParentWithHousehold,
   submitRoutineForApproval,
   syncAppData as syncRepositoryAppData,
 } from "@/lib/data/app-repository";
-import type { AuthFlowState, ParentLoginDraft, ParentSignupDraft } from "@/lib/auth/auth-foundation";
+import type {
+  AuthFlowState,
+  ParentLoginDraft,
+  ParentSignupDraft,
+} from "@/lib/auth/auth-foundation";
 import { getChildProfileForUser, getCurrentUser } from "@/lib/storage/app-state";
-import { AppData, ChildProfile, ChoreDraft, PaymentLineItem, User } from "@/types/app";
+import { AppData, ChildProfile, ChoreDraft, PaymentLineItem, Profile, User } from "@/types/app";
 
 type Toast = {
   id: number;
@@ -56,12 +62,14 @@ export function EarnedItApp() {
   const [authMessage, setAuthMessage] = useState<string | null>(null);
   const [authState, setAuthState] = useState<AuthFlowState>("signed_out");
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
+  const [isAccountOpen, setIsAccountOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const latestAppDataRef = useRef(appData);
   const mutationQueueRef = useRef<Promise<void>>(Promise.resolve());
   const parentSignupInFlightRef = useRef(false);
   const parentSignupAttemptRef = useRef(0);
   const parentLoginInFlightRef = useRef(false);
+  const childDeviceLinkInFlightRef = useRef(false);
   const authBootstrap = getAuthBootstrapState();
 
   useEffect(() => {
@@ -99,11 +107,65 @@ export function EarnedItApp() {
   }, []);
 
   useEffect(() => {
+    if (!hasLoadedStoredData || typeof window === "undefined") {
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const childLinkToken = params.get("childLink");
+    if (!childLinkToken || childDeviceLinkInFlightRef.current) {
+      return;
+    }
+
+    childDeviceLinkInFlightRef.current = true;
+    void (async () => {
+      try {
+        const result = await signInChildWithDeviceLink(
+          childLinkToken,
+          latestAppDataRef.current,
+        );
+        setAuthMessage(result.message);
+        setAuthState(result.authState);
+        setStorageMode(result.storageMode);
+        if (result.ok) {
+          latestAppDataRef.current = result.appData;
+          setAppData(result.appData);
+          setSyncWarning(null);
+          pushToast(result.message);
+        }
+      } finally {
+        params.delete("childLink");
+        const nextSearch = params.toString();
+        window.history.replaceState(
+          null,
+          "",
+          `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}`,
+        );
+        childDeviceLinkInFlightRef.current = false;
+      }
+    })();
+  }, [hasLoadedStoredData]);
+
+  useEffect(() => {
     if (!hasLoadedStoredData || storageMode !== "supabase") {
       return;
     }
 
+    const activeUser = latestAppDataRef.current.users.find(
+      (user) => user.id === latestAppDataRef.current.session.currentUserId,
+    );
+    if (activeUser?.role === "child") {
+      return;
+    }
+
     const timer = window.setInterval(async () => {
+      const sessionUser = latestAppDataRef.current.users.find(
+        (user) => user.id === latestAppDataRef.current.session.currentUserId,
+      );
+      if (sessionUser?.role === "child") {
+        return;
+      }
+
       const pulled = await pullAppDataSnapshot(latestAppDataRef.current);
       if (!pulled.ok) {
         setStorageMode(pulled.storageMode);
@@ -123,7 +185,7 @@ export function EarnedItApp() {
     }, 5000);
 
     return () => window.clearInterval(timer);
-  }, [hasLoadedStoredData, storageMode]);
+  }, [appData.session.currentUserId, hasLoadedStoredData, storageMode]);
 
   function pushToast(message: string) {
     const id = Date.now();
@@ -266,6 +328,16 @@ export function EarnedItApp() {
   }
 
   async function handleParentSignOut() {
+    if (latestAppDataRef.current.session.authMode !== "supabase") {
+      const signedOut = setActiveUser(latestAppDataRef.current, null);
+      updateAppData(signedOut);
+      setAuthState("signed_out");
+      setAuthMessage("Signed out.");
+      setIsAccountOpen(false);
+      pushToast("Signed out.");
+      return;
+    }
+
     const result = await signOutParent(latestAppDataRef.current);
     setAuthMessage(result.message);
     setAuthState(result.authState);
@@ -274,6 +346,7 @@ export function EarnedItApp() {
     setAppData(result.appData);
     setSyncWarning(result.ok ? "Sign in to load your household." : syncWarning);
     if (result.ok) {
+      setIsAccountOpen(false);
       pushToast(result.message);
     }
   }
@@ -298,6 +371,8 @@ export function EarnedItApp() {
   let childChores = [] as AppData["chores"];
   let childPayouts = [] as AppData["payouts"];
   let householdName: string | null = null;
+  let parentProfile: Profile | null = null;
+  let householdChildren: ChildProfile[] = [];
 
   try {
     currentUser = getCurrentUser(appData);
@@ -310,6 +385,8 @@ export function EarnedItApp() {
       ? getPayments(appData).filter((payout) => payout.child_id === profileId)
       : [];
     householdName = getHousehold(appData)?.name ?? null;
+    parentProfile = appData.profiles.find((profile) => profile.role === "parent") ?? null;
+    householdChildren = getChildren(appData);
   } catch (error) {
     console.warn("[Earned] Top-level app derivation failed.", error);
     return (
@@ -364,7 +441,15 @@ export function EarnedItApp() {
             </div>
 
             <div className="relative mt-6 flex flex-wrap gap-2">
-              {appData.session.authMode === "supabase" && appData.session.authUserId ? (
+              {currentUser?.role === "child" ? (
+                <button
+                  className="hero-button-secondary rounded-full px-4 py-2.5 text-sm font-black"
+                  onClick={() => void handleParentSignOut()}
+                  type="button"
+                >
+                  Sign out
+                </button>
+              ) : appData.session.authMode === "supabase" && appData.session.authUserId ? (
                 <>
                   <button
                     className={`rounded-full px-4 py-2.5 text-sm font-black ${
@@ -377,17 +462,13 @@ export function EarnedItApp() {
                   >
                     {getRoleDisplayName(appData, "parent")} (Parent)
                   </button>
-                  {getChildren(appData).length > 0 ? (
+                  {currentUser?.role === "parent" ? (
                     <button
-                      className={`rounded-full px-4 py-2.5 text-sm font-black ${
-                        currentUser?.role === "child"
-                          ? "hero-button-primary"
-                          : "hero-button-secondary"
-                      }`}
-                      onClick={() => signInAs("child")}
+                      className="hero-button-secondary rounded-full px-4 py-2.5 text-sm font-black"
+                      onClick={() => setIsAccountOpen(true)}
                       type="button"
                     >
-                      Preview Child
+                      Account
                     </button>
                   ) : null}
                   <button
@@ -412,12 +493,9 @@ export function EarnedItApp() {
                     {getRoleDisplayName(appData, "parent")} (Parent)
                   </button>
                   <button
-                    className={`rounded-full px-4 py-2.5 text-sm font-black ${
-                      currentUser?.role === "child"
-                        ? "hero-button-primary"
-                        : "hero-button-secondary"
-                    }`}
+                    className="hero-button-secondary rounded-full px-4 py-2.5 text-sm font-black disabled:cursor-not-allowed disabled:opacity-55"
                     onClick={() => signInAs("child")}
+                    disabled={householdChildren.length === 0}
                     type="button"
                   >
                     {getRoleDisplayName(appData, "child")} (Child)
@@ -439,6 +517,7 @@ export function EarnedItApp() {
               authMessage={authMessage}
               authState={authState}
               authWarning={authBootstrap.setupWarning}
+              childLoginEnabled={householdChildren.length > 0}
               isSubmitting={isAuthSubmitting}
               onLogin={handleParentLogin}
               onSignup={handleParentSignup}
@@ -479,7 +558,8 @@ export function EarnedItApp() {
                   </button>
 
                   <button
-                    className="metric-card metric-card-premium success-pulse rounded-[28px] bg-gradient-to-br from-[#e2f3d9] via-[#f6efd9] to-[#fff8df] px-5 py-5 text-left text-slate-950"
+                    className="metric-card metric-card-premium success-pulse rounded-[28px] bg-gradient-to-br from-[#e2f3d9] via-[#f6efd9] to-[#fff8df] px-5 py-5 text-left text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={householdChildren.length === 0}
                     onClick={() => signInAs("child")}
                     type="button"
                   >
@@ -491,7 +571,9 @@ export function EarnedItApp() {
                     </span>
                     <span className="mt-3 block text-2xl font-black">Grow rewards</span>
                     <span className="mt-2 block text-sm leading-6 text-slate-700">
-                      Finish chores, snap proof, and watch your little garden of rewards grow.
+                      {householdChildren.length === 0
+                        ? "Create a child profile to start assigning chores."
+                        : "Finish chores, snap proof, and watch your little garden of rewards grow."}
                     </span>
                   </button>
                 </div>
@@ -531,8 +613,6 @@ export function EarnedItApp() {
             </section>
           ) : currentUser.role === "parent" ? (
             <ParentDashboard
-              authMode={appData.session.authMode}
-              currentUser={currentUser}
               checkIns={appData.checkIns}
               childProfiles={getChildren(appData).filter(
                 (profile) => profile.parent_id === currentUser.id,
@@ -540,8 +620,20 @@ export function EarnedItApp() {
               chores={getChores(appData).filter((chore) => chore.parent_id === currentUser.id)}
               householdName={householdName}
               payouts={getPayments(appData).filter((payout) => payout.parent_id === currentUser.id)}
-              onCreateChild={async (name) => {
-                const result = await createChildRecord(name, latestAppDataRef.current);
+              onCreateChild={async (draft) => {
+                const result = await createChildRecord(draft, latestAppDataRef.current);
+                if (result.ok) {
+                  latestAppDataRef.current = result.appData;
+                  setAppData(result.appData);
+                  pushToast(result.message);
+                }
+                return {
+                  ok: result.ok,
+                  message: result.message,
+                };
+              }}
+              onRegenerateChildLink={async (childId) => {
+                const result = await regenerateChildDeviceLink(childId, latestAppDataRef.current);
                 if (result.ok) {
                   latestAppDataRef.current = result.appData;
                   setAppData(result.appData);
@@ -638,9 +730,19 @@ export function EarnedItApp() {
             />
           ) : (
             <div className="glass-card rounded-[28px] p-6 text-slate-600">
-              This child account is not linked to a child profile yet.
+              This child account is not linked to a child profile yet. Sign out and ask a parent
+              to create or update the child profile.
             </div>
           )}
+          {isAccountOpen && currentUser?.role === "parent" ? (
+            <AccountPanel
+              childProfiles={householdChildren}
+              currentUser={currentUser}
+              householdName={householdName}
+              parentProfile={parentProfile}
+              onClose={() => setIsAccountOpen(false)}
+            />
+          ) : null}
         </div>
 
           <div className="pointer-events-none fixed inset-x-0 top-4 z-50 flex flex-col items-center gap-2 px-4">
@@ -667,10 +769,90 @@ function getRoleDisplayName(appData: AppData, role: "parent" | "child") {
 
   if (role === "child") {
     const childProfileName = appData.childProfiles[0]?.name?.trim();
-    return childProfileName || "Child";
+    return childProfileName || "Child login";
   }
 
   return "Parent";
+}
+
+function AccountPanel({
+  childProfiles,
+  currentUser,
+  householdName,
+  parentProfile,
+  onClose,
+}: {
+  childProfiles: ChildProfile[];
+  currentUser: User;
+  householdName: string | null;
+  parentProfile: Profile | null;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-[#1e1a13]/48 px-3 py-4 backdrop-blur-sm sm:items-center">
+      <section className="w-full max-w-xl overflow-hidden rounded-[30px] bg-[#fffaf0] shadow-[0_28px_80px_rgba(25,20,12,0.38)]">
+        <div className="payment-sheet-header px-5 py-5 text-white">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="section-kicker kicker-row">
+                <span className="kicker-icon">
+                  <AppIcon className="h-4 w-4" name="seed" />
+                </span>
+                Account
+              </div>
+              <h3 className="mt-3 font-mono text-2xl font-black">
+                {householdName?.trim() || "Household details"}
+              </h3>
+            </div>
+            <button
+              className="hero-button-secondary rounded-full px-3 py-2 text-xs font-black"
+              onClick={onClose}
+              type="button"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-3 px-4 py-4">
+          <InfoRow label="Account name" value={currentUser.name || "Parent"} />
+          <InfoRow label="Email" value={currentUser.email || "No email on file"} />
+          <InfoRow label="Household name" value={householdName?.trim() || "Household"} />
+          <InfoRow
+            label="Parent profile"
+            value={parentProfile?.display_name?.trim() || currentUser.name || "Parent"}
+          />
+          <div className="rounded-[22px] border border-[#d9c075]/50 bg-white px-4 py-4">
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-[#6d5a2d]">
+              Child profiles
+            </p>
+            {childProfiles.length === 0 ? (
+              <p className="mt-2 text-sm font-bold text-slate-600">
+                No child profiles yet.
+              </p>
+            ) : (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {childProfiles.map((child) => (
+                  <span className="stat-chip stat-chip-soft" key={child.id}>
+                    {child.name.trim() || "child profile"}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[22px] border border-[#d9c075]/50 bg-white px-4 py-4">
+      <p className="text-xs font-black uppercase tracking-[0.14em] text-[#6d5a2d]">{label}</p>
+      <p className="mt-1 font-black text-slate-950">{value}</p>
+    </div>
+  );
 }
 
 function FeatureCard({

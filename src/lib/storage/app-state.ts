@@ -346,6 +346,10 @@ function normalizeAppData(appData: AppData): AppData {
   const normalizedChildProfiles: ChildProfile[] = migratedAppData.childProfiles.map((profile) => ({
     ...profile,
     household_id: profile.household_id?.trim() || householdId,
+    access_token:
+      profile.access_token ??
+      (profile as ChildProfile & { login_code?: string | null }).login_code ??
+      null,
     created_at: getTimestampValue(profile.created_at, profile.updated_at, householdTimestamp),
     updated_at: getTimestampValue(profile.updated_at, profile.created_at, householdTimestamp),
   }));

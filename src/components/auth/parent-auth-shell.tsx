@@ -15,6 +15,7 @@ type ParentAuthShellProps = {
   authWarning: string | null;
   isSubmitting: boolean;
   authState?: string;
+  childLoginEnabled?: boolean;
   onLogin: (draft: ParentLoginDraft) => Promise<void>;
   onSignup: (draft: ParentSignupDraft) => Promise<void>;
 };
@@ -23,11 +24,12 @@ export function ParentAuthShell({
   authMessage,
   authWarning,
   authState,
+  childLoginEnabled = false,
   isSubmitting,
   onLogin,
   onSignup,
 }: ParentAuthShellProps) {
-  const [mode, setMode] = useState<"login" | "signup">("signup");
+  const [mode, setMode] = useState<"child" | "login" | "signup">("signup");
   const [loginDraft, setLoginDraft] = useState<ParentLoginDraft>(() => createEmptyParentLoginDraft());
   const [signupDraft, setSignupDraft] = useState<ParentSignupDraft>(() => createEmptyParentSignupDraft());
   const submitLockRef = useRef(false);
@@ -91,6 +93,17 @@ export function ParentAuthShell({
           >
             Parent login
           </button>
+          {childLoginEnabled ? (
+            <button
+              className={`rounded-full px-4 py-2.5 text-sm font-black ${
+                mode === "child" ? "hero-button-primary" : "hero-button-secondary"
+              }`}
+              onClick={() => setMode("child")}
+              type="button"
+            >
+              Child login
+            </button>
+          ) : null}
         </div>
 
         {authWarning ? (
@@ -136,7 +149,7 @@ export function ParentAuthShell({
               <span className="text-[0.95rem] font-black text-[#5f5747]">Household name</span>
               <input
                 className="field-surface w-full rounded-2xl px-4 py-4 text-base text-[#2f271f]"
-                placeholder="Cynthia's Home"
+                placeholder="The Johnson House"
                 value={signupDraft.householdName}
                 onChange={(event) =>
                   setSignupDraft((current) => ({ ...current, householdName: event.target.value }))
@@ -176,7 +189,7 @@ export function ParentAuthShell({
               {isSubmitting ? "Creating..." : "Create parent account"}
             </button>
           </div>
-        ) : (
+        ) : mode === "login" ? (
           <div className="space-y-4">
             <div>
               <p className="text-sm font-black uppercase tracking-[0.16em] text-[#6d5a2d]">
@@ -219,6 +232,22 @@ export function ParentAuthShell({
             >
               {isSubmitting ? "Signing in..." : "Sign in as parent"}
             </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div>
+              <p className="text-sm font-black uppercase tracking-[0.16em] text-[#6d5a2d]">
+                Child device
+              </p>
+              <h3 className="mt-2 font-mono text-3xl font-black text-slate-900">
+                Scan a child QR code
+              </h3>
+            </div>
+
+            <div className="rounded-[24px] border border-[#d9c075]/50 bg-white px-4 py-5 text-sm leading-6 text-slate-700">
+              A parent opens the child profile QR from their account. Scanning it links this
+              device directly to that child&apos;s restricted chore view.
+            </div>
           </div>
         )}
       </div>
