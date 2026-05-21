@@ -27,7 +27,6 @@ import {
   rejectChore,
   resetLocalAppData,
   regenerateChildDeviceLink,
-  setActiveUser,
   signInChildWithDeviceLink,
   signInParent,
   signOutParent,
@@ -233,20 +232,6 @@ export function EarnedItApp() {
     return mutationQueueRef.current;
   }
 
-  function signInAs(role: "parent" | "child") {
-    if (!appData) {
-      return;
-    }
-
-    const user = appData.users.find((candidate) => candidate.role === role);
-    if (!user) {
-      return;
-    }
-
-    updateAppData(setActiveUser(appData, user.id));
-    pushToast(`Signed in as ${getRoleDisplayName(appData, role)}`);
-  }
-
   async function handleParentSignup(draft: ParentSignupDraft) {
     if (parentSignupInFlightRef.current) {
       if (process.env.NODE_ENV === "development") {
@@ -329,7 +314,13 @@ export function EarnedItApp() {
 
   async function handleParentSignOut() {
     if (latestAppDataRef.current.session.authMode !== "supabase") {
-      const signedOut = setActiveUser(latestAppDataRef.current, null);
+      const signedOut = {
+        ...latestAppDataRef.current,
+        session: {
+          ...latestAppDataRef.current.session,
+          currentUserId: null,
+        },
+      };
       updateAppData(signedOut);
       setAuthState("signed_out");
       setAuthMessage("Signed out.");
@@ -373,6 +364,7 @@ export function EarnedItApp() {
   let householdName: string | null = null;
   let parentProfile: Profile | null = null;
   let householdChildren: ChildProfile[] = [];
+  let householdLoaded = false;
 
   try {
     currentUser = getCurrentUser(appData);
@@ -387,6 +379,7 @@ export function EarnedItApp() {
     householdName = getHousehold(appData)?.name ?? null;
     parentProfile = appData.profiles.find((profile) => profile.role === "parent") ?? null;
     householdChildren = getChildren(appData);
+    householdLoaded = Boolean(getHousehold(appData));
   } catch (error) {
     console.warn("[Earned] Top-level app derivation failed.", error);
     return (
@@ -449,28 +442,15 @@ export function EarnedItApp() {
                 >
                   Sign out
                 </button>
-              ) : appData.session.authMode === "supabase" && appData.session.authUserId ? (
+              ) : currentUser?.role === "parent" && appData.session.authUserId ? (
                 <>
                   <button
-                    className={`rounded-full px-4 py-2.5 text-sm font-black ${
-                      currentUser?.role === "parent"
-                        ? "hero-button-primary"
-                        : "hero-button-secondary"
-                    }`}
-                    onClick={() => signInAs("parent")}
+                    className="hero-button-secondary rounded-full px-4 py-2.5 text-sm font-black"
+                    onClick={() => setIsAccountOpen(true)}
                     type="button"
                   >
-                    {getRoleDisplayName(appData, "parent")} (Parent)
+                    Account
                   </button>
-                  {currentUser?.role === "parent" ? (
-                    <button
-                      className="hero-button-secondary rounded-full px-4 py-2.5 text-sm font-black"
-                      onClick={() => setIsAccountOpen(true)}
-                      type="button"
-                    >
-                      Account
-                    </button>
-                  ) : null}
                   <button
                     className="hero-button-secondary rounded-full px-4 py-2.5 text-sm font-black"
                     onClick={() => void handleParentSignOut()}
@@ -479,29 +459,7 @@ export function EarnedItApp() {
                     Sign out
                   </button>
                 </>
-              ) : (
-                <>
-                  <button
-                    className={`rounded-full px-4 py-2.5 text-sm font-black ${
-                      currentUser?.role === "parent"
-                        ? "hero-button-primary"
-                        : "hero-button-secondary"
-                    }`}
-                    onClick={() => signInAs("parent")}
-                    type="button"
-                  >
-                    {getRoleDisplayName(appData, "parent")} (Parent)
-                  </button>
-                  <button
-                    className="hero-button-secondary rounded-full px-4 py-2.5 text-sm font-black disabled:cursor-not-allowed disabled:opacity-55"
-                    onClick={() => signInAs("child")}
-                    disabled={householdChildren.length === 0}
-                    type="button"
-                  >
-                    {getRoleDisplayName(appData, "child")} (Child)
-                  </button>
-                </>
-              )}
+              ) : null}
             </div>
             {syncWarning ? (
               <p className="relative mt-3 text-sm font-bold text-[#ffe8be]">{syncWarning}</p>
@@ -512,7 +470,9 @@ export function EarnedItApp() {
             )}
           </header>
 
-          {!currentUser && appData.session.authMode === "supabase" ? (
+          {!hasLoadedStoredData || authState === "signed_in_loading_household" ? (
+            <LoadingState />
+          ) : !currentUser ? (
             <ParentAuthShell
               authMessage={authMessage}
               authState={authState}
@@ -522,96 +482,7 @@ export function EarnedItApp() {
               onLogin={handleParentLogin}
               onSignup={handleParentSignup}
             />
-          ) : !currentUser ? (
-            <section className="grid gap-4 lg:grid-cols-[1.08fr_0.92fr]">
-              <div className="panel-strong mode-frame rounded-[32px] p-6 text-white sm:p-7">
-                <div className="section-kicker kicker-row">
-                  <span className="kicker-icon">
-                    <AppIcon className="h-4 w-4" name="sprout" />
-                  </span>
-                  Pick a role
-                </div>
-                <h2 className="mt-3 max-w-lg font-mono text-3xl font-black">
-                  Tend the habit garden from both sides.
-                </h2>
-                <p className="mt-3 max-w-xl text-sm leading-7 text-slate-200 sm:text-base">
-                  Parent mode sets routines, reviews submissions, and records payments. Child
-                  mode keeps each habit moving with proof and steady progress.
-                </p>
-
-                <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                  <button
-                    className="metric-card metric-card-premium rounded-[28px] bg-white px-5 py-5 text-left text-slate-900"
-                    onClick={() => signInAs("parent")}
-                    type="button"
-                  >
-                    <span className="kicker-row text-slate-500">
-                      <span className="kicker-icon">
-                        <AppIcon className="h-4 w-4" name="seed" />
-                      </span>
-                      {getRoleDisplayName(appData, "parent")}
-                    </span>
-                    <span className="mt-3 block text-2xl font-black">Plant routines</span>
-                    <span className="mt-2 block text-sm leading-6 text-slate-600">
-                      Set rewards, review proof, and help routines take root.
-                    </span>
-                  </button>
-
-                  <button
-                    className="metric-card metric-card-premium success-pulse rounded-[28px] bg-gradient-to-br from-[#e2f3d9] via-[#f6efd9] to-[#fff8df] px-5 py-5 text-left text-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
-                    disabled={householdChildren.length === 0}
-                    onClick={() => signInAs("child")}
-                    type="button"
-                  >
-                    <span className="kicker-row text-slate-500">
-                      <span className="kicker-icon">
-                        <AppIcon className="h-4 w-4" name="sprout" />
-                      </span>
-                      {getRoleDisplayName(appData, "child")}
-                    </span>
-                    <span className="mt-3 block text-2xl font-black">Grow rewards</span>
-                    <span className="mt-2 block text-sm leading-6 text-slate-700">
-                      {householdChildren.length === 0
-                        ? "Create a child profile to start assigning chores."
-                        : "Finish chores, snap proof, and watch your little garden of rewards grow."}
-                    </span>
-                  </button>
-                </div>
-              </div>
-
-              <div className="panel-soft rounded-[32px] p-6 sm:p-7">
-                <div className="kicker-row text-slate-500">
-                  <span className="kicker-icon">
-                    <AppIcon className="h-4 w-4" name="leaf" />
-                  </span>
-                  Why it feels better
-                </div>
-                <h2 className="mt-3 font-mono text-3xl font-black text-slate-900">
-                  Built for routines that need sunlight, not spreadsheets.
-                </h2>
-                <div className="mt-5 grid gap-3">
-                  <FeatureCard
-                    accent="from-[#f7ead4] via-[#fff5ea] to-[#fffdf8]"
-                    copy="Every chore moves through obvious growth stages, so nobody wonders what happened next."
-                    icon="check"
-                    title="Clear growth stages"
-                  />
-                  <FeatureCard
-                    accent="from-[#e4efd8] via-[#f6f1df] to-[#fff8e6]"
-                    copy="Taking photos and checking progress feels like tending a tiny garden from your phone."
-                    icon="sprout"
-                    title="Water it anywhere"
-                  />
-                  <FeatureCard
-                    accent="from-[#f2e7c5] via-[#f9f1dd] to-[#fffaf0]"
-                    copy="Earned tracks payments without pretending to replace how families actually pay each other."
-                    icon="seed"
-                    title="Payments stay simple"
-                  />
-                </div>
-              </div>
-            </section>
-          ) : currentUser.role === "parent" ? (
+          ) : currentUser.role === "parent" && appData.session.authUserId && householdLoaded ? (
             <ParentDashboard
               checkIns={appData.checkIns}
               childProfiles={getChildren(appData).filter(
@@ -694,7 +565,7 @@ export function EarnedItApp() {
                 });
               }}
             />
-          ) : childProfile ? (
+          ) : currentUser.role === "child" && childProfile && householdLoaded ? (
             <ChildDashboard
               childProfile={childProfile}
               checkIns={appData.checkIns.filter((entry) => entry.child_id === childProfile.id)}
@@ -729,10 +600,7 @@ export function EarnedItApp() {
               }}
             />
           ) : (
-            <div className="glass-card rounded-[28px] p-6 text-slate-600">
-              This child account is not linked to a child profile yet. Sign out and ask a parent
-              to create or update the child profile.
-            </div>
+            <LoadingState copy="Confirming account access..." />
           )}
           {isAccountOpen && currentUser?.role === "parent" ? (
             <AccountPanel
@@ -759,20 +627,6 @@ export function EarnedItApp() {
       </main>
     </AppCrashBoundary>
   );
-}
-
-function getRoleDisplayName(appData: AppData, role: "parent" | "child") {
-  const user = appData.users.find((candidate) => candidate.role === role);
-  if (user?.name?.trim()) {
-    return user.name.trim();
-  }
-
-  if (role === "child") {
-    const childProfileName = appData.childProfiles[0]?.name?.trim();
-    return childProfileName || "Child login";
-  }
-
-  return "Parent";
 }
 
 function AccountPanel({
@@ -855,30 +709,19 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function FeatureCard({
-  accent,
-  icon,
-  title,
-  copy,
-}: {
-  accent: string;
-  icon: "seed" | "camera" | "check" | "sprout";
-  title: string;
-  copy: string;
-}) {
+function LoadingState({ copy = "Loading household access..." }: { copy?: string }) {
   return (
-    <div
-      className={`card-spotlight rounded-[24px] border border-white/70 bg-gradient-to-br ${accent} p-4 shadow-[0_18px_32px_rgba(20,33,61,0.08)]`}
-    >
+    <section className="panel-soft rounded-[32px] p-6 text-slate-700 sm:p-7">
       <div className="kicker-row text-slate-500">
         <span className="kicker-icon">
-          <AppIcon className="h-4 w-4" name={icon} />
+          <AppIcon className="h-4 w-4" name="sprout" />
         </span>
-        Highlight
+        Please wait
       </div>
-      <p className="mt-3 font-black text-slate-900">{title}</p>
-      <p className="mt-1 text-sm leading-6 text-slate-700">{copy}</p>
-    </div>
+      <h2 className="mt-3 font-mono text-3xl font-black text-slate-900">
+        Checking access
+      </h2>
+      <p className="mt-3 max-w-xl text-sm leading-7 sm:text-base">{copy}</p>
+    </section>
   );
 }
-
