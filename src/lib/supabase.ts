@@ -12,9 +12,18 @@ type SupabaseEnvState = {
   missingPublicEnv: string[];
 };
 
+let browserClient: SupabaseClient | null = null;
+
 function readEnv(value: string | undefined) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+function isLocalAuthTestModeEnabled() {
+  return (
+    process.env.NODE_ENV !== "production" &&
+    process.env.NEXT_PUBLIC_EARNEDIT_AUTH_TEST_MODE?.trim().toLowerCase() === "true"
+  );
 }
 
 export function getSupabaseRuntimeConfig(): SupabaseRuntimeConfig {
@@ -31,6 +40,13 @@ export function getSupabaseEnvState(): SupabaseEnvState {
     config.url ? null : "NEXT_PUBLIC_SUPABASE_URL",
     config.anonKey ? null : "NEXT_PUBLIC_SUPABASE_ANON_KEY",
   ].filter((value): value is string => Boolean(value));
+  if (isLocalAuthTestModeEnabled()) {
+    return {
+      configured: false,
+      mode: "demo",
+      missingPublicEnv: [],
+    };
+  }
 
   return {
     configured: missingPublicEnv.length === 0,
@@ -42,12 +58,17 @@ export function getSupabaseEnvState(): SupabaseEnvState {
 export const isSupabaseConfigured = getSupabaseEnvState().configured;
 
 export function getSupabaseBrowserClient(): SupabaseClient | null {
+  if (isLocalAuthTestModeEnabled()) {
+    return null;
+  }
+
   const config = getSupabaseRuntimeConfig();
   if (!config.url || !config.anonKey) {
     return null;
   }
 
-  return createClient(config.url, config.anonKey);
+  browserClient ??= createClient(config.url, config.anonKey);
+  return browserClient;
 }
 
 export function getSupabaseSetupWarning() {

@@ -144,14 +144,8 @@ export function EarnedItApp() {
           pushToast(result.message);
         }
       } finally {
-        params.delete("token");
-        params.delete("childLink");
-        const nextSearch = params.toString();
-        window.history.replaceState(
-          null,
-          "",
-          `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}`,
-        );
+        // Next patches history during app-router hydration. Mutating the URL here can
+        // dispatch a router action before initialization on the child-link route.
         childDeviceLinkInFlightRef.current = false;
       }
     })();
