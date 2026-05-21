@@ -346,6 +346,8 @@ function normalizeAppData(appData: AppData): AppData {
   const normalizedChildProfiles: ChildProfile[] = migratedAppData.childProfiles.map((profile) => ({
     ...profile,
     household_id: profile.household_id?.trim() || householdId,
+    age: profile.age ?? null,
+    gender: profile.gender ?? null,
     access_token:
       profile.access_token ??
       (profile as ChildProfile & { login_code?: string | null }).login_code ??

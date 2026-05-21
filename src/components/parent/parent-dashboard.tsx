@@ -2,7 +2,6 @@
 
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
-import QRCode from "qrcode";
 import { ChoreComposer } from "@/components/parent/chore-composer";
 import { ChoreGroup } from "@/components/parent/chore-group";
 import { PaymentReviewSheet } from "@/components/parent/payment-review-sheet";
@@ -49,8 +48,6 @@ type ParentDashboardProps = {
   checkIns: CheckIn[];
   householdName?: string | null;
   payouts: Payout[];
-  onCreateChild?: (draft: { name: string }) => Promise<{ ok: boolean; message: string }>;
-  onRegenerateChildLink?: (childId: string) => Promise<{ ok: boolean; message: string }>;
   onSaveChore: (draft: ChoreDraft) => void;
   onDeleteChore: (choreId: string) => void;
   onApprove: (choreId: string) => void;
@@ -100,8 +97,6 @@ export function ParentDashboard({
   checkIns,
   householdName = null,
   payouts,
-  onCreateChild,
-  onRegenerateChildLink,
   onSaveChore,
   onDeleteChore,
   onApprove,
@@ -122,12 +117,7 @@ export function ParentDashboard({
   const [rejectionNote, setRejectionNote] = useState("");
   const [payoutNotes, setPayoutNotes] = useState("");
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
-  const [childNameDraft, setChildNameDraft] = useState("");
-  const [childSetupMessage, setChildSetupMessage] = useState<string | null>(null);
   const [selectedChildId, setSelectedChildId] = useState<string>("all");
-  const [qrChildId, setQrChildId] = useState<string | null>(null);
-  const [isRegeneratingChildId, setIsRegeneratingChildId] = useState<string | null>(null);
-  const [isSavingChild, setIsSavingChild] = useState(false);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => {
     if (typeof window === "undefined") {
       return getDefaultParentSections();
@@ -498,39 +488,6 @@ export function ParentDashboard({
     resetDraft();
   }
 
-  async function handleCreateChild() {
-    if (!onCreateChild) {
-      return;
-    }
-
-    setIsSavingChild(true);
-    try {
-      const result = await onCreateChild({
-        name: childNameDraft,
-      });
-      setChildSetupMessage(result.message);
-      if (result.ok) {
-        setChildNameDraft("");
-      }
-    } finally {
-      setIsSavingChild(false);
-    }
-  }
-
-  async function handleRegenerateChildLink(childId: string) {
-    if (!onRegenerateChildLink) {
-      return;
-    }
-
-    setIsRegeneratingChildId(childId);
-    try {
-      const result = await onRegenerateChildLink(childId);
-      setChildSetupMessage(result.message);
-    } finally {
-      setIsRegeneratingChildId(null);
-    }
-  }
-
   return (
     <div className="space-y-6">
       <section className="grid gap-3 md:grid-cols-3">
@@ -577,89 +534,38 @@ export function ParentDashboard({
             />
 
             <div className="space-y-4">
-              {onCreateChild ? (
+              {childProfiles.length > 1 ? (
                 <div className="rounded-[24px] border border-white/14 bg-white/10 p-4 text-white">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <p className="text-sm font-black uppercase tracking-[0.16em] text-[#fff0cb]">
-                        Household setup
-                      </p>
-                      <p className="mt-1 text-base font-black">
-                        {householdName ?? "Current household"}
+                        Viewing
                       </p>
                       <p className="mt-1 text-sm leading-6 text-slate-200">
-                        Child records created here stay inside this household.
+                        Filter dashboard chores without changing profile setup.
                       </p>
                     </div>
                     <span className="label-chip label-chip-light">{childProfiles.length} children</span>
                   </div>
-
-                  {childProfiles.length === 0 ? (
-                    <div className="mt-4 rounded-[20px] border border-white/14 bg-white/10 px-4 py-4 text-sm font-bold text-white">
-                      Create a child profile to start assigning chores.
-                    </div>
-                  ) : (
-                    <div className="mt-4 space-y-2">
-                      <p className="text-xs font-black uppercase tracking-[0.16em] text-[#fff0cb]">
-                        Child profiles
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          className={`rounded-full px-3 py-2 text-sm font-black ${selectedChildId === "all" ? "hero-button-primary" : "hero-button-secondary"}`}
-                          onClick={() => setSelectedChildId("all")}
-                          type="button"
-                        >
-                          All children
-                        </button>
-                        {childProfiles.map((child) => (
-                          <span className="flex flex-wrap gap-2" key={child.id}>
-                            <button
-                              className={`rounded-full px-3 py-2 text-sm font-black ${selectedChildId === child.id ? "hero-button-primary" : "hero-button-secondary"}`}
-                              onClick={() => setSelectedChildId(child.id)}
-                              type="button"
-                            >
-                              {child.name.trim() || "child profile"}
-                            </button>
-                            <button
-                              className="hero-button-secondary rounded-full px-3 py-2 text-sm font-black"
-                              onClick={() => setQrChildId(child.id)}
-                              type="button"
-                            >
-                              QR
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto]">
-                    <label className="block">
-                      <span className="mb-2 block text-xs font-black uppercase tracking-[0.16em] text-[#fff0cb]">
-                        Child name
-                      </span>
-                      <input
-                        className="field-surface min-w-0 flex-1 rounded-2xl px-4 py-4 text-base text-[#2f271f]"
-                        placeholder="Add child name"
-                        value={childNameDraft}
-                        onChange={(event) => setChildNameDraft(event.target.value)}
-                      />
-                    </label>
+                  <div className="mt-4 flex flex-wrap gap-2">
                     <button
-                      className="action-button self-end rounded-2xl bg-gradient-to-r from-[#78a85a] via-[#91b85f] to-[#d5a642] px-5 py-4 text-base font-black text-[#231d16] shadow-lg shadow-[#3d2b12]/18"
-                      disabled={!onCreateChild || isSavingChild}
-                      onClick={() => void handleCreateChild()}
+                      className={`rounded-full px-3 py-2 text-sm font-black ${selectedChildId === "all" ? "hero-button-primary" : "hero-button-secondary"}`}
+                      onClick={() => setSelectedChildId("all")}
                       type="button"
                     >
-                      {isSavingChild ? "Adding..." : "Add child"}
+                      All children
                     </button>
+                    {childProfiles.map((child) => (
+                      <button
+                        className={`rounded-full px-3 py-2 text-sm font-black ${selectedChildId === child.id ? "hero-button-primary" : "hero-button-secondary"}`}
+                        key={child.id}
+                        onClick={() => setSelectedChildId(child.id)}
+                        type="button"
+                      >
+                        {child.name.trim() || "child profile"}
+                      </button>
+                    ))}
                   </div>
-
-                  {childSetupMessage ? (
-                    <p className="mt-3 rounded-2xl bg-white/10 px-3 py-2 text-sm font-bold text-white">
-                      {childSetupMessage}
-                    </p>
-                  ) : null}
                 </div>
               ) : null}
 
@@ -834,15 +740,6 @@ export function ParentDashboard({
           onNotesChange={setPayoutNotes}
         />
       ) : null}
-      {qrChildId ? (
-        <ChildDeviceLinkModal
-          key={qrChildId}
-          childProfile={childProfiles.find((child) => child.id === qrChildId) ?? null}
-          isRegenerating={isRegeneratingChildId === qrChildId}
-          onClose={() => setQrChildId(null)}
-          onRegenerate={() => void handleRegenerateChildLink(qrChildId)}
-        />
-      ) : null}
     </div>
   );
 }
@@ -885,106 +782,5 @@ function DashboardSection({
         <div className="accordion-panel-inner px-3 pb-4 pt-2 sm:px-4">{children}</div>
       </div>
     </section>
-  );
-}
-
-function ChildDeviceLinkModal({
-  childProfile,
-  isRegenerating,
-  onClose,
-  onRegenerate,
-}: {
-  childProfile: ChildProfile | null;
-  isRegenerating: boolean;
-  onClose: () => void;
-  onRegenerate: () => void;
-}) {
-  const [qrImageUrl, setQrImageUrl] = useState<string | null>(null);
-  const childName = childProfile?.name.trim() || "your child";
-  const childLink =
-    typeof window !== "undefined" && childProfile?.access_token
-      ? `${window.location.origin}${window.location.pathname}?childLink=${encodeURIComponent(
-          childProfile.access_token,
-        )}`
-      : "";
-
-  useEffect(() => {
-    let cancelled = false;
-
-    if (!childLink) {
-      return;
-    }
-
-    void QRCode.toDataURL(childLink, {
-      margin: 2,
-      scale: 7,
-      width: 260,
-    }).then((dataUrl) => {
-      if (!cancelled) {
-        setQrImageUrl(dataUrl);
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [childLink]);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#1e1a13]/48 px-3 py-4 backdrop-blur-sm sm:items-center">
-      <section className="w-full max-w-md overflow-hidden rounded-[30px] bg-[#fffaf0] shadow-[0_28px_80px_rgba(25,20,12,0.38)]">
-        <div className="payment-sheet-header px-5 py-5 text-white">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="section-kicker kicker-row">
-                <span className="kicker-icon">
-                  <AppIcon className="h-4 w-4" name="spark" />
-                </span>
-                Child device QR
-              </div>
-              <h3 className="mt-3 font-mono text-2xl font-black">{childName}</h3>
-            </div>
-            <button
-              className="hero-button-secondary rounded-full px-3 py-2 text-xs font-black"
-              onClick={onClose}
-              type="button"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-
-        <div className="space-y-4 px-5 py-5 text-slate-900">
-          <div className="rounded-[26px] border border-[#d9c075]/50 bg-white p-4 text-center">
-            {qrImageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                alt={`Child device QR for ${childName}`}
-                className="mx-auto h-64 w-64 rounded-[18px]"
-                src={qrImageUrl}
-              />
-            ) : (
-              <div className="flex h-64 items-center justify-center rounded-[18px] bg-[#f8f0dc] text-sm font-bold text-slate-600">
-                QR unavailable
-              </div>
-            )}
-          </div>
-
-          <p className="text-sm leading-6 text-slate-700">
-            This QR opens only {childName}&apos;s child-safe chore view. Regenerating it revokes
-            the previous QR for this child.
-          </p>
-
-          <button
-            className="action-button w-full rounded-2xl border border-[#d9c075] bg-white px-5 py-4 text-base font-black text-[#3b301f] disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={!childProfile || isRegenerating}
-            onClick={onRegenerate}
-            type="button"
-          >
-            {isRegenerating ? "Regenerating..." : "Regenerate QR"}
-          </button>
-        </div>
-      </section>
-    </div>
   );
 }

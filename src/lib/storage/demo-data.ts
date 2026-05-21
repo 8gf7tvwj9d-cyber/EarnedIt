@@ -64,6 +64,8 @@ export const demoData: AppData = {
       household_id: householdId,
       parent_id: "user-parent-1",
       name: "Child",
+      age: null,
+      gender: null,
       user_id: "user-child-1",
       access_token: null,
       created_at: timestamp,

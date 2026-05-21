@@ -83,6 +83,8 @@ export type ChildProfile = {
   household_id: string;
   parent_id: string;
   name: string;
+  age?: number | null;
+  gender?: string | null;
   user_id: string;
   access_token?: string | null;
   created_at: string;
