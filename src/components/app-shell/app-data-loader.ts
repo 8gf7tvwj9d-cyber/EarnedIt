@@ -1,6 +1,5 @@
 import {
   loadAppData,
-  resetLocalAppData,
   type SharedAppDataInitialization,
 } from "@/lib/data/app-repository";
 import { demoData } from "@/lib/storage/demo-data";
@@ -14,22 +13,13 @@ export async function loadInitialAppData(): Promise<SharedAppDataInitialization>
   try {
     return await loadAppData();
   } catch (error) {
-    console.warn("[Earned] Initial app load failed, resetting local starter data.", error);
-    try {
-      return {
-        appData: resetLocalAppData(),
-        shouldPersist: false,
-        storageMode: "local",
-        syncWarning: "Shared sync unavailable. Using local-only data on this device.",
-      };
-    } catch (resetError) {
-      console.warn("[Earned] Starter data reset also failed.", resetError);
-      return {
-        appData: cloneBundledDemoData(),
-        shouldPersist: true,
-        storageMode: "local",
-        syncWarning: "Shared sync unavailable. Using local-only data on this device.",
-      };
-    }
+    console.warn("[Earned] Initial app load failed. Preserving saved beta data.", error);
+    return {
+      appData: cloneBundledDemoData(),
+      shouldPersist: false,
+      storageMode: "local",
+      syncWarning:
+        "Saved beta data was not changed, but the app could not load it. Check the console before using reset.",
+    };
   }
 }

@@ -165,7 +165,14 @@ type PendingParentSignup = {
   householdName: string;
 };
 
+type LocalParentCredential = {
+  email: string;
+  passwordHash: string;
+  userId: string;
+};
+
 const PENDING_PARENT_SIGNUP_KEY = "earnedit-pending-parent-signup-v1";
+const LOCAL_PARENT_AUTH_KEY = "earnedit-local-parent-auth-v1";
 let supabaseSignupCallCount = 0;
 
 // Beta safety note: keep multi-household and sync work on beta-multi-user.
@@ -368,6 +375,72 @@ function makeChildAccessToken() {
     .slice(2)}`;
 }
 
+async function hashLocalParentPassword(email: string, password: string) {
+  const input = `${email.trim().toLowerCase()}:${password}`;
+  if (typeof crypto !== "undefined" && crypto.subtle) {
+    const bytes = new TextEncoder().encode(input);
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    return Array.from(new Uint8Array(digest))
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
+  }
+
+  return btoa(input);
+}
+
+function readLocalParentCredentials(): LocalParentCredential[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+
+  try {
+    const raw = window.localStorage.getItem(LOCAL_PARENT_AUTH_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.filter((entry): entry is LocalParentCredential => {
+      return (
+        entry &&
+        typeof entry === "object" &&
+        typeof (entry as LocalParentCredential).email === "string" &&
+        typeof (entry as LocalParentCredential).passwordHash === "string" &&
+        typeof (entry as LocalParentCredential).userId === "string"
+      );
+    });
+  } catch (error) {
+    console.warn("[Earned auth] Could not read local beta parent credentials.", error);
+    return [];
+  }
+}
+
+function writeLocalParentCredentials(credentials: LocalParentCredential[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(LOCAL_PARENT_AUTH_KEY, JSON.stringify(credentials));
+}
+
+async function saveLocalParentCredential(email: string, password: string, userId: string) {
+  const normalizedEmail = email.trim().toLowerCase();
+  const passwordHash = await hashLocalParentPassword(normalizedEmail, password);
+  const credentials = readLocalParentCredentials().filter(
+    (credential) => credential.email !== normalizedEmail,
+  );
+  credentials.push({
+    email: normalizedEmail,
+    passwordHash,
+    userId,
+  });
+  writeLocalParentCredentials(credentials);
+}
+
 function normalizeChildDraft(childDraft: string | ChildCreateDraft) {
   const name = typeof childDraft === "string" ? childDraft : childDraft.name;
   const ageValue = typeof childDraft === "string" ? null : childDraft.age;
@@ -375,7 +448,13 @@ function normalizeChildDraft(childDraft: string | ChildCreateDraft) {
     ageValue === null || ageValue === undefined || ageValue === ""
       ? null
       : Number(ageValue);
-  const gender = typeof childDraft === "string" ? null : childDraft.gender?.trim() || null;
+  const rawGender = typeof childDraft === "string" ? null : childDraft.gender?.trim().toLowerCase() || null;
+  const gender =
+    rawGender === "boy"
+      ? "male"
+      : rawGender === "girl"
+        ? "female"
+        : rawGender;
 
   return {
     age: parsedAge !== null && Number.isFinite(parsedAge) ? Math.round(parsedAge) : null,
@@ -393,8 +472,8 @@ function getChildDraftValidationMessage(draft: ReturnType<typeof normalizeChildD
     return "Enter an age from 1 to 18.";
   }
 
-  if (!draft.gender) {
-    return "Select a gender for the child profile.";
+  if (draft.gender !== "male" && draft.gender !== "female") {
+    return "Select Male or Female for the child profile.";
   }
 
   return null;
@@ -525,13 +604,21 @@ function buildParentUser(profile: ProfileRow, authUser: AuthSessionUser): User {
 }
 
 function buildChildProfile(row: ChildRow, parentUserId: string): ChildProfile {
+  const rawGender = row.gender?.trim().toLowerCase() ?? null;
+  const gender =
+    rawGender === "boy"
+      ? "male"
+      : rawGender === "girl"
+        ? "female"
+        : rawGender;
+
   return {
     id: row.id,
     household_id: row.household_id,
     parent_id: parentUserId,
     name: row.display_name,
     age: row.age ?? null,
-    gender: row.gender ?? null,
+    gender: gender === "male" || gender === "female" ? gender : null,
     user_id: `child-user-${row.id}`,
     access_token: row.child_access_token ?? row.login_code ?? null,
     created_at: row.created_at,
@@ -1138,6 +1225,14 @@ export async function loadAppData(): Promise<SharedAppDataInitialization> {
   const authBootstrap = getAuthBootstrapState();
   let authUserForFailure: AuthSessionUser | null = null;
 
+  if (isEarnedItAuthTestModeEnabled()) {
+    return {
+      ...local,
+      storageMode: "local",
+      syncWarning: "Local beta auth mode is active. Data is stored in this browser.",
+    };
+  }
+
   if (!authBootstrap.canUseSupabaseAuth) {
     return {
       ...local,
@@ -1147,6 +1242,23 @@ export async function loadAppData(): Promise<SharedAppDataInitialization> {
   }
 
   try {
+    const activeChildDeviceProfile = getActiveChildDeviceProfile(local.appData);
+    if (activeChildDeviceProfile?.access_token) {
+      const childDeviceData = await bootstrapChildDeviceSession(
+        activeChildDeviceProfile.access_token,
+        local.appData,
+      );
+      if (childDeviceData) {
+        writeAppData(childDeviceData);
+        return {
+          appData: childDeviceData,
+          shouldPersist: false,
+          storageMode: "supabase",
+          syncWarning: null,
+        };
+      }
+    }
+
     const authUser = await getSignedInAuthUser();
     authUserForFailure = authUser;
     if (!authUser) {
@@ -1368,6 +1480,7 @@ export async function signUpParentWithHousehold(
       email,
       householdName,
     });
+    await saveLocalParentCredential(email, draft.password, appData.session.currentUserId ?? "");
     writeAppData(appData);
     if (process.env.NODE_ENV === "development") {
       console.info("EarnedIt auth test mode active");
@@ -1538,6 +1651,62 @@ export async function signInParent(
   draft: ParentLoginDraft,
   localAppData: AppData,
 ): Promise<ParentAuthResult> {
+  const email = draft.email.trim().toLowerCase();
+  if (isEarnedItAuthTestModeEnabled()) {
+    const parentUser = localAppData.users.find(
+      (user) => user.role === "parent" && user.email?.trim().toLowerCase() === email,
+    );
+
+    if (!parentUser) {
+      return {
+        appData: localAppData,
+        authState: "auth_error",
+        ok: false,
+        storageMode: "local",
+        message: "No local beta parent account was found for that email.",
+      };
+    }
+
+    const passwordHash = await hashLocalParentPassword(email, draft.password);
+    const credential = readLocalParentCredentials().find(
+      (entry) => entry.email === email && entry.userId === parentUser.id,
+    );
+    if (credential && credential.passwordHash !== passwordHash) {
+      return {
+        appData: localAppData,
+        authState: "auth_error",
+        ok: false,
+        storageMode: "local",
+        message: "Invalid local beta password for this parent account.",
+      };
+    }
+
+    if (!credential) {
+      await saveLocalParentCredential(email, draft.password, parentUser.id);
+    }
+
+    const appData = setCurrentUser(
+      {
+        ...localAppData,
+        session: {
+          ...localAppData.session,
+          currentHouseholdId: parentUser.household_id,
+          authUserId: parentUser.auth_user_id ?? parentUser.id,
+          authMode: "demo",
+        },
+      },
+      parentUser.id,
+    );
+    writeAppData(appData);
+    return {
+      appData,
+      authState: "ready",
+      ok: true,
+      storageMode: "local",
+      message: `Signed in to ${localAppData.households.find((household) => household.id === parentUser.household_id)?.name ?? "your household"}.`,
+    };
+  }
+
   const supabase = getSupabaseBrowserClient();
   if (!supabase) {
     return {
@@ -1550,7 +1719,7 @@ export async function signInParent(
   }
 
   const signInResult = await supabase.auth.signInWithPassword({
-    email: draft.email.trim().toLowerCase(),
+    email,
     password: draft.password,
   });
 
@@ -2239,6 +2408,38 @@ function mergeChildDeviceLinkIntoLocal(
   });
 }
 
+function getActiveChildDeviceProfile(appData: AppData) {
+  const activeUser = appData.users.find((user) => user.id === appData.session.currentUserId);
+  if (activeUser?.role !== "child") {
+    return null;
+  }
+
+  return appData.childProfiles.find((profile) => profile.user_id === activeUser.id) ?? null;
+}
+
+async function bootstrapChildDeviceSession(
+  accessToken: string,
+  localAppData: AppData,
+): Promise<AppData | null> {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) {
+    return null;
+  }
+
+  const { data, error } = await supabase.rpc("bootstrap_child_device", {
+    access_token: accessToken,
+  });
+
+  if (error || !data) {
+    if (error) {
+      console.warn("[Earned] Child device bootstrap failed.", error);
+    }
+    return null;
+  }
+
+  return mergeChildDeviceLinkIntoLocal(localAppData, data as ChildDeviceBootstrapPayload);
+}
+
 export async function signInChildWithDeviceLink(
   accessToken: string,
   localAppData: AppData,
@@ -2248,7 +2449,10 @@ export async function signInChildWithDeviceLink(
     (profile) => profile.access_token === token,
   );
 
-  if (localChildProfile) {
+  if (
+    localChildProfile &&
+    (isEarnedItAuthTestModeEnabled() || localAppData.session.authMode !== "supabase")
+  ) {
     const appData = signInChildProfile(localChildProfile, localAppData);
     writeAppData(appData);
     return {
@@ -2260,8 +2464,20 @@ export async function signInChildWithDeviceLink(
     };
   }
 
-  const supabase = getSupabaseBrowserClient();
-  if (!supabase) {
+  const appData = await bootstrapChildDeviceSession(token, localAppData);
+  if (appData) {
+    writeAppData(appData);
+    const childName = appData.childProfiles[0]?.name?.trim() || "your child";
+    return {
+      appData,
+      authState: "ready",
+      ok: true,
+      storageMode: "supabase",
+      message: `Signed in as ${childName}.`,
+    };
+  }
+
+  if (!getSupabaseBrowserClient()) {
     return {
       appData: localAppData,
       authState: "auth_error",
@@ -2271,43 +2487,12 @@ export async function signInChildWithDeviceLink(
     };
   }
 
-  const { data, error } = await supabase.rpc("bootstrap_child_device", {
-    access_token: token,
-  });
-
-  if (error) {
-    return {
-      appData: localAppData,
-      authState: getDatabaseAuthState(error),
-      ok: false,
-      storageMode: "supabase",
-      message: describeSupabaseError(error, "Child link could not be opened."),
-    };
-  }
-
-  if (!data) {
-    return {
-      appData: localAppData,
-      authState: "auth_error",
-      ok: false,
-      storageMode: "supabase",
-      message: "This child link is no longer valid. Ask a parent to show the QR again.",
-    };
-  }
-
-  const appData = mergeChildDeviceLinkIntoLocal(
-    localAppData,
-    data as ChildDeviceBootstrapPayload,
-  );
-  writeAppData(appData);
-
-  const childName = appData.childProfiles[0]?.name?.trim() || "your child";
   return {
-    appData,
-    authState: "ready",
-    ok: true,
+    appData: localAppData,
+    authState: "auth_error",
+    ok: false,
     storageMode: "supabase",
-    message: `Signed in as ${childName}.`,
+    message: "This child link is no longer valid. Ask a parent to show the QR again.",
   };
 }
 

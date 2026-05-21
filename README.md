@@ -37,14 +37,72 @@ npm run dev
 
 3. Open [http://localhost:3000](http://localhost:3000)
 
-The app starts with neutral parent and child roles stored in `localStorage`.
+`npm run dev` binds Next to `127.0.0.1` for normal local browser testing. Do not pass `--host`; this Next version uses `--hostname`.
 
-## Starter roles
+## Local-only beta testing
 
-- Parent: `Parent`
-- Child: `Child`
+For quick local-only testing, `.env.local` can use:
 
-Use the role buttons on the home screen or in the header to switch views.
+```env
+NEXT_PUBLIC_EARNEDIT_AUTH_TEST_MODE=true
+NEXT_PUBLIC_EARNEDIT_CHILD_LINK_BASE_URL=
+```
+
+In local beta auth mode, parent signup creates a browser-local beta account and stores household/profile/chore data in `localStorage`. This is useful when Supabase email confirmation or rate limits block quick iteration. It is not suitable for phone QR testing because another device cannot read this browser's local storage.
+
+## LAN testing from a phone or tablet
+
+Use the LAN dev script when another device needs to open the app from your computer:
+
+```bash
+npm run dev:lan
+```
+
+This binds Next to `0.0.0.0`. Then open the app from your phone/tablet using your computer's LAN IP, for example:
+
+```text
+http://192.168.1.25:3000
+```
+
+Windows may ask for firewall permission the first time. Allow access on your private network.
+
+For child QR links on a phone/tablet, set the public child link base URL to the same reachable LAN URL:
+
+```env
+NEXT_PUBLIC_EARNEDIT_CHILD_LINK_BASE_URL=http://192.168.1.25:3000
+```
+
+Restart the dev server after changing `.env.local`.
+
+## Child QR testing
+
+Cross-device child QR linking requires Supabase mode because the child device has to load the household and child profile from shared backend data.
+
+Use this shape for LAN QR testing:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+NEXT_PUBLIC_EARNEDIT_AUTH_TEST_MODE=false
+NEXT_PUBLIC_EARNEDIT_CHILD_LINK_BASE_URL=http://192.168.1.25:3000
+```
+
+Use this shape for deployed QR testing:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+NEXT_PUBLIC_EARNEDIT_AUTH_TEST_MODE=false
+NEXT_PUBLIC_EARNEDIT_CHILD_LINK_BASE_URL=https://your-deployed-earnedit-url
+```
+
+The app intentionally does not generate phone-facing QR links to `localhost` or `127.0.0.1`. QR links are generated as:
+
+```text
+{NEXT_PUBLIC_EARNEDIT_CHILD_LINK_BASE_URL}/child-link?token=...
+```
+
+The token grants child-only access for one child profile. Regenerating the QR from the parent Account screen revokes the previous token.
 
 ## Environment variables
 
@@ -60,6 +118,7 @@ Set:
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY` for server-only admin tasks such as beta household provisioning or back-office repair scripts
 - `NEXT_PUBLIC_EARNEDIT_AUTH_TEST_MODE=false` by default. This is an emergency local fallback only. Set to `true` only in a non-production build when Supabase email confirmation or rate limits block parent signup while you are debugging. In that mode the parent signup flow creates a local test household and skips Supabase signup; production builds ignore the bypass.
+- `NEXT_PUBLIC_EARNEDIT_CHILD_LINK_BASE_URL` for child QR links. Use a LAN URL such as `http://192.168.1.25:3000` for phone testing against `npm run dev:lan`, or use a deployed app URL for hosted testing.
 
 When Supabase env vars are present, beta uses real Supabase Auth and database sync. If Supabase is configured but migrations, RLS, or auth settings are broken, the app should show the Supabase error instead of silently falling back to local data.
 
@@ -72,6 +131,8 @@ Use this for `beta-multi-user` in-house testing:
 3. In Supabase SQL Editor, run the beta migrations in this order:
    - `supabase/migrations/20260519_beta_multi_household_foundation.sql`
    - `supabase/migrations/20260520_beta_chore_sync_bridge.sql`
+   - `supabase/migrations/20260520_beta_child_login_code.sql`
+   - `supabase/migrations/20260520_beta_child_profile_details.sql`
 4. Run the verification queries below.
 5. Check Supabase Table Editor for `households`, `profiles`, `children`, `chores`, `chore_completions`, `chore_photos`, `payments`, `payouts`, `chore_adjustments`, and `household_app_state`.
 6. Start the app with `npm run dev` and create a parent account.
@@ -91,6 +152,8 @@ Supabase Auth settings:
 - Migration: [supabase/migrations/20260506_create_earnedit_schema.sql](supabase/migrations/20260506_create_earnedit_schema.sql)
 - Beta foundation migration: [supabase/migrations/20260519_beta_multi_household_foundation.sql](supabase/migrations/20260519_beta_multi_household_foundation.sql)
 - Beta chore sync bridge: [supabase/migrations/20260520_beta_chore_sync_bridge.sql](supabase/migrations/20260520_beta_chore_sync_bridge.sql)
+- Beta child QR/device link support: [supabase/migrations/20260520_beta_child_login_code.sql](supabase/migrations/20260520_beta_child_login_code.sql)
+- Beta child profile details: [supabase/migrations/20260520_beta_child_profile_details.sql](supabase/migrations/20260520_beta_child_profile_details.sql)
 - Seed data: [supabase/seed.sql](supabase/seed.sql)
 
 Core tables:
@@ -106,6 +169,8 @@ For a clean beta Supabase project, apply migrations in filename order. The beta 
 
 1. `20260519_beta_multi_household_foundation.sql`
 2. `20260520_beta_chore_sync_bridge.sql`
+3. `20260520_beta_child_login_code.sql`
+4. `20260520_beta_child_profile_details.sql`
 
 Foundation dependency graph:
 

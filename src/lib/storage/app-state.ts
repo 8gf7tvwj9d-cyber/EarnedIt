@@ -105,6 +105,19 @@ function getTimestampValue(...candidates: Array<string | null | undefined>) {
   return candidates.find((candidate) => Boolean(candidate && candidate.trim())) ?? getTimestampFallback();
 }
 
+function normalizeChildGender(gender: string | null | undefined) {
+  const normalized = gender?.trim().toLowerCase();
+  if (normalized === "boy") {
+    return "male";
+  }
+
+  if (normalized === "girl") {
+    return "female";
+  }
+
+  return normalized === "male" || normalized === "female" ? normalized : null;
+}
+
 function getAppHouseholdId(candidate: Partial<AppData> | null | undefined) {
   const sessionHouseholdId = candidate?.session?.currentHouseholdId?.trim();
   if (sessionHouseholdId) {
@@ -347,7 +360,7 @@ function normalizeAppData(appData: AppData): AppData {
     ...profile,
     household_id: profile.household_id?.trim() || householdId,
     age: profile.age ?? null,
-    gender: profile.gender ?? null,
+    gender: normalizeChildGender(profile.gender),
     access_token:
       profile.access_token ??
       (profile as ChildProfile & { login_code?: string | null }).login_code ??

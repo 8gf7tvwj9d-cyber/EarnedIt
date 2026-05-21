@@ -102,8 +102,9 @@ export function EarnedItApp() {
       setStorageMode(initialState.storageMode);
       setSyncWarning(initialState.syncWarning);
       setAuthState(
-        initialState.appData.session.authMode === "supabase" &&
-          initialState.appData.session.authUserId
+        initialState.appData.session.currentUserId ||
+          (initialState.appData.session.authMode === "supabase" &&
+            initialState.appData.session.authUserId)
           ? "ready"
           : "signed_out",
       );
@@ -121,7 +122,7 @@ export function EarnedItApp() {
     }
 
     const params = new URLSearchParams(window.location.search);
-    const childLinkToken = params.get("childLink");
+    const childLinkToken = params.get("token") ?? params.get("childLink");
     if (!childLinkToken || childDeviceLinkInFlightRef.current) {
       return;
     }
@@ -143,6 +144,7 @@ export function EarnedItApp() {
           pushToast(result.message);
         }
       } finally {
+        params.delete("token");
         params.delete("childLink");
         const nextSearch = params.toString();
         window.history.replaceState(
@@ -708,10 +710,8 @@ export function EarnedItApp() {
 }
 
 const genderOptions = [
-  { label: "Girl", value: "girl" },
-  { label: "Boy", value: "boy" },
-  { label: "Nonbinary", value: "nonbinary" },
-  { label: "Prefer not to say", value: "prefer_not_to_say" },
+  { label: "Male", value: "male" },
+  { label: "Female", value: "female" },
 ];
 
 function getEmptyChildDraft(): ChildProfileDraft {
@@ -735,6 +735,17 @@ function getGenderLabel(gender: string | null | undefined) {
 }
 
 function getConfiguredChildLinkBase() {
+  const localAuthMode =
+    process.env.NODE_ENV !== "production" &&
+    process.env.NEXT_PUBLIC_EARNEDIT_AUTH_TEST_MODE?.trim().toLowerCase() === "true";
+  if (localAuthMode) {
+    return {
+      baseUrl: null,
+      message:
+        "Child QR device linking needs Supabase mode. Set NEXT_PUBLIC_EARNEDIT_AUTH_TEST_MODE=false, run the beta migrations, and use NEXT_PUBLIC_EARNEDIT_CHILD_LINK_BASE_URL for the device URL.",
+    };
+  }
+
   const configured = process.env.NEXT_PUBLIC_EARNEDIT_CHILD_LINK_BASE_URL?.trim();
   if (configured) {
     return {
@@ -776,9 +787,8 @@ function buildChildLink(accessToken: string | null | undefined) {
     };
   }
 
-  const path = typeof window !== "undefined" ? window.location.pathname : "/";
   return {
-    link: `${baseUrl}${path}?childLink=${encodeURIComponent(accessToken)}`,
+    link: `${baseUrl}/child-link?token=${encodeURIComponent(accessToken)}`,
     message: null,
   };
 }
@@ -818,11 +828,11 @@ function FirstTimeSetupScreen({
       <h2 className="mt-3 font-mono text-3xl font-black">
         Set up {householdName?.trim() || "your household"}
       </h2>
-      <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-200">
+      <p className="mt-3 max-w-2xl text-sm font-bold leading-7 text-white">
         Create a child profile to start assigning chores. The dashboard stays locked until at
         least one real child profile exists.
       </p>
-      <div className="mt-6 max-w-3xl rounded-[26px] border border-white/14 bg-white/10 p-4">
+      <div className="mt-6 max-w-3xl rounded-[26px] border border-[#d9c075]/55 bg-[#fffaf0] p-4 text-slate-950 shadow-[0_16px_30px_rgba(48,35,18,0.12)]">
         <ChildProfileForm
           draft={draft}
           isSaving={isSaving}
@@ -831,7 +841,7 @@ function FirstTimeSetupScreen({
           onSubmit={handleSubmit}
         />
         {message ? (
-          <p className="mt-3 rounded-2xl bg-white/10 px-3 py-2 text-sm font-bold text-white">
+          <p className="mt-3 rounded-2xl bg-white px-3 py-2 text-sm font-black text-slate-800">
             {message}
           </p>
         ) : null}
@@ -878,6 +888,7 @@ function AccountScreen({
   const [editingChildDraft, setEditingChildDraft] = useState<ChildProfileDraft>(() =>
     getEmptyChildDraft(),
   );
+  const [isEditingAccount, setIsEditingAccount] = useState(false);
   const [qrChildId, setQrChildId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [savingTask, setSavingTask] = useState<string | null>(null);
@@ -891,6 +902,9 @@ function AccountScreen({
         parentDisplayName: parentNameDraft,
       });
       setMessage(result.message);
+      if (result.ok) {
+        setIsEditingAccount(false);
+      }
     } finally {
       setSavingTask(null);
     }
@@ -984,39 +998,75 @@ function AccountScreen({
             <span className="kicker-icon">
               <AppIcon className="h-4 w-4" name="leaf" />
             </span>
-            Household
+            Account Info
           </div>
           <div className="mt-4 space-y-4">
             <ReadOnlyInfo label="Account name" value={currentUser.name || "Parent"} />
             <ReadOnlyInfo label="Email" value={currentUser.email || "No email on file"} />
-            <label className="block">
-              <span className="mb-2 block text-xs font-black uppercase tracking-[0.14em] text-[#6d5a2d]">
-                Household name
-              </span>
-              <input
-                className="field-surface w-full rounded-2xl px-4 py-3 text-base"
-                value={householdDraft}
-                onChange={(event) => setHouseholdDraft(event.target.value)}
-              />
-            </label>
-            <label className="block">
-              <span className="mb-2 block text-xs font-black uppercase tracking-[0.14em] text-[#6d5a2d]">
-                Parent profile name
-              </span>
-              <input
-                className="field-surface w-full rounded-2xl px-4 py-3 text-base"
-                value={parentNameDraft}
-                onChange={(event) => setParentNameDraft(event.target.value)}
-              />
-            </label>
-            <button
-              className="action-button w-full rounded-2xl bg-gradient-to-r from-[#78a85a] via-[#91b85f] to-[#d5a642] px-5 py-4 text-base font-black text-[#231d16] shadow-lg shadow-[#3d2b12]/18 disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={savingTask === "account"}
-              onClick={() => void handleSaveAccount()}
-              type="button"
-            >
-              {savingTask === "account" ? "Saving..." : "Save account details"}
-            </button>
+            <ReadOnlyInfo
+              label="Password/security"
+              value="Password changes unavailable during beta."
+            />
+            {!isEditingAccount ? (
+              <>
+                <ReadOnlyInfo label="Household name" value={householdName?.trim() || "Household"} />
+                <ReadOnlyInfo
+                  label="Parent profile name"
+                  value={parentProfile?.display_name?.trim() || currentUser.name || "Parent"}
+                />
+                <button
+                  className="action-button w-full rounded-2xl bg-gradient-to-r from-[#78a85a] via-[#91b85f] to-[#d5a642] px-5 py-4 text-base font-black text-[#231d16] shadow-lg shadow-[#3d2b12]/18"
+                  onClick={() => setIsEditingAccount(true)}
+                  type="button"
+                >
+                  Edit account info
+                </button>
+              </>
+            ) : (
+              <>
+                <label className="block">
+                  <span className="mb-2 block text-xs font-black uppercase tracking-[0.14em] text-[#4f3f1f]">
+                    Household name
+                  </span>
+                  <input
+                    className="field-surface w-full rounded-2xl bg-white px-4 py-3 text-base font-bold text-slate-950 placeholder:text-slate-500"
+                    value={householdDraft}
+                    onChange={(event) => setHouseholdDraft(event.target.value)}
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-2 block text-xs font-black uppercase tracking-[0.14em] text-[#4f3f1f]">
+                    Parent profile name
+                  </span>
+                  <input
+                    className="field-surface w-full rounded-2xl bg-white px-4 py-3 text-base font-bold text-slate-950 placeholder:text-slate-500"
+                    value={parentNameDraft}
+                    onChange={(event) => setParentNameDraft(event.target.value)}
+                  />
+                </label>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <button
+                    className="action-button flex-1 rounded-2xl bg-gradient-to-r from-[#78a85a] via-[#91b85f] to-[#d5a642] px-5 py-4 text-base font-black text-[#231d16] shadow-lg shadow-[#3d2b12]/18 disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={savingTask === "account"}
+                    onClick={() => void handleSaveAccount()}
+                    type="button"
+                  >
+                    {savingTask === "account" ? "Saving..." : "Save account info"}
+                  </button>
+                  <button
+                    className="rounded-2xl border border-[#d9c075] bg-white px-5 py-4 text-base font-black text-slate-800"
+                    onClick={() => {
+                      setHouseholdDraft(householdName?.trim() || "");
+                      setParentNameDraft(parentProfile?.display_name?.trim() || currentUser.name || "");
+                      setIsEditingAccount(false);
+                    }}
+                    type="button"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            )}
             {message ? (
               <p className="rounded-2xl bg-white px-3 py-2 text-sm font-bold text-slate-700">
                 {message}
@@ -1157,22 +1207,22 @@ function ChildProfileForm({
   return (
     <div className="grid gap-3 sm:grid-cols-[1fr_0.55fr_0.9fr_auto]">
       <label className="block">
-        <span className="mb-2 block text-xs font-black uppercase tracking-[0.14em] text-[#6d5a2d]">
+        <span className="mb-2 block text-xs font-black uppercase tracking-[0.14em] text-[#4f3f1f]">
           Child name
         </span>
         <input
-          className="field-surface w-full rounded-2xl px-4 py-3 text-base"
+          className="field-surface w-full rounded-2xl bg-white px-4 py-3 text-base font-bold text-slate-950 placeholder:text-slate-500"
           placeholder="Child name"
           value={draft.name}
           onChange={(event) => onChange({ ...draft, name: event.target.value })}
         />
       </label>
       <label className="block">
-        <span className="mb-2 block text-xs font-black uppercase tracking-[0.14em] text-[#6d5a2d]">
+        <span className="mb-2 block text-xs font-black uppercase tracking-[0.14em] text-[#4f3f1f]">
           Age
         </span>
         <input
-          className="field-surface w-full rounded-2xl px-4 py-3 text-base"
+          className="field-surface w-full rounded-2xl bg-white px-4 py-3 text-base font-bold text-slate-950 placeholder:text-slate-500"
           inputMode="numeric"
           min={1}
           max={18}
@@ -1183,11 +1233,11 @@ function ChildProfileForm({
         />
       </label>
       <label className="block">
-        <span className="mb-2 block text-xs font-black uppercase tracking-[0.14em] text-[#6d5a2d]">
+        <span className="mb-2 block text-xs font-black uppercase tracking-[0.14em] text-[#4f3f1f]">
           Gender
         </span>
         <select
-          className="field-surface w-full rounded-2xl px-4 py-3 text-base"
+          className="field-surface w-full rounded-2xl bg-white px-4 py-3 text-base font-bold text-slate-950"
           value={draft.gender}
           onChange={(event) => onChange({ ...draft, gender: event.target.value })}
         >
