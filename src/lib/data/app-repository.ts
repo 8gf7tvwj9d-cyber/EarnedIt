@@ -20,6 +20,8 @@ import {
   getSupabaseBrowserClient,
   getSupabaseEnvState,
   getSupabaseSetupWarning,
+  logSupabaseAuthDebug,
+  recoverSupabaseAuthSessionFromUrl,
 } from "@/lib/supabase";
 import { isEarnedItAuthTestModeEnabled } from "@/lib/auth-test-mode";
 import type { AuthFlowState } from "@/lib/auth/auth-foundation";
@@ -176,6 +178,30 @@ const PENDING_PARENT_SIGNUP_KEY = "earnedit-pending-parent-signup-v1";
 const LOCAL_PARENT_AUTH_KEY = "earnedit-local-parent-auth-v1";
 let supabaseSignupCallCount = 0;
 
+const REQUIRED_BETA_MIGRATIONS = [
+  "20260519_beta_multi_household_foundation.sql",
+  "20260520_beta_child_login_code.sql",
+  "20260520_beta_child_profile_details.sql",
+  "20260520_beta_chore_sync_bridge.sql",
+];
+
+const REQUIRED_SCHEMA_OBJECTS = [
+  "public.households table",
+  "public.profiles table",
+  "public.children table",
+  "public.chores table",
+  "public.chore_completions table",
+  "public.children.age column",
+  "public.children.gender column",
+  "public.children.child_access_token column",
+  "public.bootstrap_child_device(text) function",
+  "public.sync_child_device_state(text, jsonb, jsonb) function",
+  "household-scoped RLS policies from 20260519_beta_multi_household_foundation.sql",
+  "chores_household_client_id_idx index",
+  "chore_completions_household_client_id_idx index",
+  "children_child_access_token_idx index",
+];
+
 // Beta safety note: keep multi-household and sync work on beta-multi-user.
 export type DataBackendMode = "local" | "supabase";
 
@@ -286,6 +312,57 @@ function isMissingMigrationError(error: unknown) {
   );
 }
 
+function getMissingMigrationObjects(error: unknown) {
+  const message = getErrorMessage(error);
+  const lowerMessage = message.toLowerCase();
+  const objects = new Set<string>();
+  const tableMatch =
+    message.match(/table ['"]?public\.([a-z_]+)['"]?/i) ??
+    message.match(/relation ['"]?public\.([a-z_]+)['"]?/i);
+  const columnMatch =
+    message.match(/column ['"]?([a-z_]+)['"]? of ['"]?([a-z_]+)['"]?/i) ??
+    message.match(/column ['"]?([a-z_]+)['"]?.*relation ['"]?public\.([a-z_]+)['"]?/i);
+  const functionMatch = message.match(/function ['"]?public\.([a-z_]+)[('"]?/i);
+
+  if (tableMatch?.[1]) {
+    objects.add(`public.${tableMatch[1]} table`);
+  }
+
+  if (columnMatch?.[1] && columnMatch?.[2]) {
+    objects.add(`public.${columnMatch[2]}.${columnMatch[1]} column`);
+  }
+
+  if (functionMatch?.[1]) {
+    objects.add(`public.${functionMatch[1]} function`);
+  }
+
+  for (const objectName of REQUIRED_SCHEMA_OBJECTS) {
+    const searchableName = objectName
+      .replace("public.", "")
+      .replace(" table", "")
+      .replace(" column", "")
+      .replace(" function", "")
+      .toLowerCase();
+    if (lowerMessage.includes(searchableName)) {
+      objects.add(objectName);
+    }
+  }
+
+  if (isRlsDeniedError(error)) {
+    objects.add("household-scoped RLS policies from 20260519_beta_multi_household_foundation.sql");
+  }
+
+  return Array.from(objects);
+}
+
+function getRequiredMigrationMessage(missingObjects: string[]) {
+  const detected =
+    missingObjects.length > 0
+      ? `Detected missing/stale objects: ${missingObjects.join(", ")}. `
+      : "";
+  return `${detected}Run these beta-multi-user Supabase migrations in order: ${REQUIRED_BETA_MIGRATIONS.join(" -> ")}. Then confirm expected objects: ${REQUIRED_SCHEMA_OBJECTS.join(", ")}.`;
+}
+
 function isRlsDeniedError(error: unknown) {
   const message = getErrorMessage(error).toLowerCase();
   return (
@@ -307,11 +384,15 @@ function isNetworkError(error: unknown) {
 
 function describeSupabaseError(error: unknown, fallback: string) {
   if (isMissingMigrationError(error)) {
-    return "Supabase migration is missing or stale. Run the beta foundation and bridge migrations, then verify the expected tables exist.";
+    return `Supabase migration is missing or stale. ${getRequiredMigrationMessage(
+      getMissingMigrationObjects(error),
+    )}`;
   }
 
   if (isRlsDeniedError(error)) {
-    return "Supabase denied access through RLS. Confirm the user is signed in and the household/profile RLS policies are installed.";
+    return `Supabase denied access through RLS. ${getRequiredMigrationMessage(
+      getMissingMigrationObjects(error),
+    )}`;
   }
 
   if (isNetworkError(error)) {
@@ -898,6 +979,8 @@ async function getSignedInAuthUser(): Promise<AuthSessionUser | null> {
     return null;
   }
 
+  await recoverSupabaseAuthSessionFromUrl();
+
   const {
     data: { session },
     error,
@@ -908,8 +991,17 @@ async function getSignedInAuthUser(): Promise<AuthSessionUser | null> {
   }
 
   if (!session?.user) {
+    logSupabaseAuthDebug("getSession", {
+      sessionExists: false,
+      userIdExists: false,
+    });
     return null;
   }
+
+  logSupabaseAuthDebug("getSession", {
+    sessionExists: true,
+    userIdExists: Boolean(session.user.id),
+  });
 
   return {
     id: session.user.id,
@@ -1301,6 +1393,11 @@ export async function loadAppData(): Promise<SharedAppDataInitialization> {
     };
   } catch (error) {
     console.warn("[Earned] Supabase household bootstrap failed.", error);
+    logSupabaseAuthDebug("household_bootstrap_failed", {
+      sessionExists: Boolean(authUserForFailure),
+      userIdExists: Boolean(authUserForFailure?.id),
+      missingMigrationObjects: getMissingMigrationObjects(error),
+    });
     return {
       appData: withSupabaseSessionContext(local.appData, authUserForFailure?.id ?? null),
       shouldPersist: true,

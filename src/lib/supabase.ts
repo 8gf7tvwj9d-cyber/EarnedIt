@@ -49,6 +49,104 @@ export function getEarnedItAppBaseUrl() {
   return null;
 }
 
+export function logSupabaseAuthDebug(
+  eventName: string,
+  details: {
+    missingMigrationObjects?: string[];
+    sessionExists?: boolean;
+    userIdExists?: boolean;
+  } = {},
+) {
+  if (process.env.NODE_ENV !== "development") {
+    return;
+  }
+
+  console.info("[Earned auth debug]", {
+    eventName,
+    sessionExists: Boolean(details.sessionExists),
+    userIdExists: Boolean(details.userIdExists),
+    missingMigrationObjects: details.missingMigrationObjects ?? [],
+  });
+}
+
+function getUrlAuthCode() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  return params.get("code");
+}
+
+function getUrlHashSessionTokens() {
+  if (typeof window === "undefined" || !window.location.hash) {
+    return null;
+  }
+
+  const params = new URLSearchParams(window.location.hash.slice(1));
+  const accessToken = params.get("access_token");
+  const refreshToken = params.get("refresh_token");
+  if (!accessToken || !refreshToken) {
+    return null;
+  }
+
+  return {
+    accessToken,
+    refreshToken,
+  };
+}
+
+export async function recoverSupabaseAuthSessionFromUrl() {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase || typeof window === "undefined") {
+    return;
+  }
+
+  const {
+    data: { session: existingSession },
+  } = await supabase.auth.getSession();
+  logSupabaseAuthDebug("getSession_before_redirect_recovery", {
+    sessionExists: Boolean(existingSession),
+    userIdExists: Boolean(existingSession?.user?.id),
+  });
+
+  if (existingSession?.user || window.location.search.includes("error")) {
+    return;
+  }
+
+  const code = getUrlAuthCode();
+  if (code) {
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+    logSupabaseAuthDebug(error ? "email_redirect_exchange_failed" : "email_redirect_exchange_succeeded", {
+      sessionExists: Boolean(data.session),
+      userIdExists: Boolean(data.session?.user?.id),
+    });
+
+    if (error) {
+      throw error;
+    }
+    return;
+  }
+
+  const hashTokens = getUrlHashSessionTokens();
+  if (!hashTokens) {
+    return;
+  }
+
+  const { data, error } = await supabase.auth.setSession({
+    access_token: hashTokens.accessToken,
+    refresh_token: hashTokens.refreshToken,
+  });
+  logSupabaseAuthDebug(error ? "hash_redirect_session_failed" : "hash_redirect_session_succeeded", {
+    sessionExists: Boolean(data.session),
+    userIdExists: Boolean(data.session?.user?.id),
+  });
+
+  if (error) {
+    throw error;
+  }
+}
+
 export function getSupabaseEnvState(): SupabaseEnvState {
   const config = getSupabaseRuntimeConfig();
   const missingPublicEnv = [

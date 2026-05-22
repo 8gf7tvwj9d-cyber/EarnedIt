@@ -43,6 +43,7 @@ import type {
   ParentLoginDraft,
   ParentSignupDraft,
 } from "@/lib/auth/auth-foundation";
+import { getSupabaseBrowserClient, logSupabaseAuthDebug } from "@/lib/supabase";
 import { getChildProfileForUser, getCurrentUser } from "@/lib/storage/app-state";
 import { AppData, ChildProfile, ChoreDraft, PaymentLineItem, Profile, User } from "@/types/app";
 
@@ -115,6 +116,54 @@ export function EarnedItApp() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!hasLoadedStoredData || storageMode !== "supabase") {
+      return;
+    }
+
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) {
+      return;
+    }
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      logSupabaseAuthDebug(event, {
+        sessionExists: Boolean(session),
+        userIdExists: Boolean(session?.user?.id),
+      });
+
+      if (event !== "SIGNED_IN" || !session?.user) {
+        return;
+      }
+
+      window.setTimeout(() => {
+        void (async () => {
+          const initialState = await loadInitialAppData();
+          if (initialState.shouldPersist) {
+            persistLocalAppData(initialState.appData);
+          }
+          latestAppDataRef.current = initialState.appData;
+          setAppData(initialState.appData);
+          setStorageMode(initialState.storageMode);
+          setSyncWarning(initialState.syncWarning);
+          setAuthState(
+            initialState.appData.session.currentUserId ||
+              (initialState.appData.session.authMode === "supabase" &&
+                initialState.appData.session.authUserId)
+              ? "ready"
+              : "signed_out",
+          );
+        })();
+      }, 0);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [hasLoadedStoredData, storageMode]);
 
   useEffect(() => {
     if (!hasLoadedStoredData || typeof window === "undefined") {

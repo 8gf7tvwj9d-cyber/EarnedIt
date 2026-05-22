@@ -133,14 +133,17 @@ Use this for `beta-multi-user` in-house testing:
 
 1. Create or open the beta Supabase project.
 2. Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` to `.env.local`.
-3. In Supabase SQL Editor, run the beta migrations in this order:
+3. Restart `npm run dev` or `npm run dev:lan` after changing `.env.local`.
+4. In Supabase Dashboard -> SQL Editor, open a new query and run the beta migrations in this exact order. Run each file as its own query and wait for success before running the next:
    - `supabase/migrations/20260519_beta_multi_household_foundation.sql`
-   - `supabase/migrations/20260520_beta_chore_sync_bridge.sql`
    - `supabase/migrations/20260520_beta_child_login_code.sql`
    - `supabase/migrations/20260520_beta_child_profile_details.sql`
-4. Run the verification queries below.
-5. Check Supabase Table Editor for `households`, `profiles`, `children`, `chores`, `chore_completions`, `chore_photos`, `payments`, `payouts`, `chore_adjustments`, and `household_app_state`.
-6. Start the app with `npm run dev` and create a parent account.
+   - `supabase/migrations/20260520_beta_chore_sync_bridge.sql`
+5. Run the verification queries below in the same Supabase project.
+6. Check Supabase Table Editor for `households`, `profiles`, `children`, `chores`, `chore_completions`, `chore_photos`, `payments`, `payouts`, `chore_adjustments`, and `household_app_state`.
+7. Start the app with `npm run dev` or `npm run dev:lan`, create or sign in to a parent account, and continue setup.
+
+If the app reports `public.profiles table` as missing, start by rerunning `20260519_beta_multi_household_foundation.sql` in the SQL Editor for the Supabase project whose URL is in `.env.local`. That migration creates `public.profiles`.
 
 Do not run the old single-household schema on a fresh beta project unless you are explicitly testing the legacy upgrade path.
 
@@ -151,6 +154,7 @@ Supabase Auth settings:
 - Email rate limit exceeded: the app does not retry signup automatically. Wait for the email window to reset, turn confirmation off for internal testing, or manually confirm the user in Supabase Auth.
 - Manual confirmation: Supabase Dashboard -> Authentication -> Users -> open the user -> confirm email.
 - Redirect URLs: add the local app URL such as `http://localhost:3000` and any beta preview URL to Supabase Auth URL configuration before testing email links.
+- LAN redirect URLs: when using `NEXT_PUBLIC_EARNEDIT_APP_BASE_URL=http://192.168.4.21:3000`, add that exact URL to Supabase Auth redirect URL configuration too.
 
 ## Database files
 
@@ -161,21 +165,41 @@ Supabase Auth settings:
 - Beta child profile details: [supabase/migrations/20260520_beta_child_profile_details.sql](supabase/migrations/20260520_beta_child_profile_details.sql)
 - Seed data: [supabase/seed.sql](supabase/seed.sql)
 
-Core tables:
+Legacy MVP tables:
 
 - `users`
 - `child_profiles`
 - `chores`
 - `payouts`
 
+Beta multi-user tables:
+
+- `households`
+- `profiles`
+- `children`
+- `chores`
+- `chore_completions`
+- `chore_photos`
+- `payments`
+- `payouts`
+- `chore_adjustments`
+- `household_app_state`
+
 ## Beta migration verification
 
-For a clean beta Supabase project, apply migrations in filename order. The beta table order is:
+For a clean beta Supabase project, apply these beta migrations in order. Do not run the old single-household `20260506_create_earnedit_schema.sql` on a clean beta project unless you are explicitly testing a legacy upgrade path.
 
 1. `20260519_beta_multi_household_foundation.sql`
-2. `20260520_beta_chore_sync_bridge.sql`
-3. `20260520_beta_child_login_code.sql`
-4. `20260520_beta_child_profile_details.sql`
+2. `20260520_beta_child_login_code.sql`
+3. `20260520_beta_child_profile_details.sql`
+4. `20260520_beta_chore_sync_bridge.sql`
+
+What each migration provides:
+
+- `20260519_beta_multi_household_foundation.sql`: `households`, `profiles`, `children`, chore/payment tables, household foreign keys, parent profile RLS policies, and `public.current_user_household_ids()`.
+- `20260520_beta_child_login_code.sql`: `children.child_access_token`, `children_child_access_token_idx`, `public.bootstrap_child_device(text)`, and `public.sync_child_device_state(text, jsonb, jsonb)`.
+- `20260520_beta_child_profile_details.sql`: `children.age` and `children.gender`.
+- `20260520_beta_chore_sync_bridge.sql`: chore/completion `client_id` bridge columns and household/client unique indexes.
 
 Foundation dependency graph:
 
@@ -282,6 +306,58 @@ order by table_name, column_name;
 ```
 
 If any row returns `missing`, stop and fix the foundation migration before testing parent signup.
+
+Beta child/profile/QR verification:
+
+```sql
+select
+  expected.object_name,
+  case when actual.object_name is null then 'missing' else 'present' end as status
+from (
+  values
+    ('children.age'),
+    ('children.gender'),
+    ('children.child_access_token'),
+    ('chores.client_id'),
+    ('chores.parent_profile_id'),
+    ('chore_completions.client_id')
+) as expected(object_name)
+left join (
+  select table_name || '.' || column_name as object_name
+  from information_schema.columns
+  where table_schema = 'public'
+) actual on actual.object_name = expected.object_name
+order by expected.object_name;
+```
+
+```sql
+select
+  expected.object_name,
+  case when actual.object_name is null then 'missing' else 'present' end as status
+from (
+  values
+    ('bootstrap_child_device'),
+    ('sync_child_device_state')
+) as expected(object_name)
+left join (
+  select routine_name as object_name
+  from information_schema.routines
+  where specific_schema = 'public'
+) actual on actual.object_name = expected.object_name
+order by expected.object_name;
+```
+
+```sql
+select
+  tablename,
+  policyname
+from pg_policies
+where schemaname = 'public'
+and tablename in ('households', 'profiles', 'children', 'chores', 'chore_completions')
+order by tablename, policyname;
+```
+
+If the app reports `MIGRATION MISSING`, check the console for `[Earned auth debug]` and the `missingMigrationObjects` list. The log intentionally includes only auth event names, session/user existence booleans, and missing object names; it does not print secrets, tokens, or passwords.
 
 ## Current MVP behavior
 
