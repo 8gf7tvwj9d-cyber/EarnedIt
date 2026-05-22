@@ -16,6 +16,7 @@ import {
   pullSharedAppDataSnapshot,
   markBalancePaid,
   overrideMissedStreak,
+  recordParentRoutineCheckIn,
   rejectChore,
   resetAppData,
   saveChore,
@@ -393,6 +394,15 @@ export function EarnedItApp() {
                 void enqueueMutation(async (snapshot) => {
                   await syncAppData(overrideMissedStreak(snapshot, choreId, missedDate, note, currentUser));
                   pushToast("Missed streak excused");
+                });
+              }}
+              onRecordRoutineCheckIn={(choreId) => {
+                void enqueueMutation(async (snapshot) => {
+                  const result = recordParentRoutineCheckIn(snapshot, choreId, currentUser);
+                  if (result.ok) {
+                    await syncAppData(result.appData);
+                  }
+                  pushToast(result.message);
                 });
               }}
               onMarkPaid={(childId, notes, paymentItems?: PaymentLineItem[]) => {

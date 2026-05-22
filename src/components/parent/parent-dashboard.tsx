@@ -55,6 +55,7 @@ type ParentDashboardProps = {
   onReject: (choreId: string, note: string) => void;
   onClearCompletedTestData: () => void;
   onOverrideMissedStreak: (choreId: string, missedDate: string, note: string) => void;
+  onRecordRoutineCheckIn: (choreId: string) => void;
   onMarkPaid: (childId: string, notes: string, paymentItems?: PaymentLineItem[]) => void;
 };
 
@@ -104,6 +105,7 @@ export function ParentDashboard({
   onReject,
   onClearCompletedTestData,
   onOverrideMissedStreak,
+  onRecordRoutineCheckIn,
   onMarkPaid,
 }: ParentDashboardProps) {
   const [isComposerOpen, setIsComposerOpen] = useState(false);
@@ -573,7 +575,7 @@ export function ParentDashboard({
                       Review Payments
                     </button>
                   </div>
-                  <ChoreGroup allChores={chores} checkIns={checkIns} chores={approvedCompleted} onOverrideMissedStreak={onOverrideMissedStreak} childProfiles={childProfiles} isEmbedded onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Approved queue" />
+                  <ChoreGroup allChores={chores} checkIns={checkIns} chores={approvedCompleted} onOverrideMissedStreak={onOverrideMissedStreak} onRecordRoutineCheckIn={onRecordRoutineCheckIn} childProfiles={childProfiles} isEmbedded onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Approved queue" />
                 </div>
               </DashboardSection>
             </div>
@@ -588,7 +590,7 @@ export function ParentDashboard({
             title="Available / Active"
             onOpenChange={(next) => setSectionOpen("active", next)}
           >
-            <ChoreGroup allChores={chores} checkIns={checkIns} chores={availableActive} onOverrideMissedStreak={onOverrideMissedStreak} childProfiles={childProfiles} isEmbedded onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Active chores" />
+            <ChoreGroup allChores={chores} checkIns={checkIns} chores={availableActive} onOverrideMissedStreak={onOverrideMissedStreak} onRecordRoutineCheckIn={onRecordRoutineCheckIn} childProfiles={childProfiles} isEmbedded onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Active chores" />
           </DashboardSection>
 
           <DashboardSection
@@ -598,7 +600,7 @@ export function ParentDashboard({
             title="Paid"
             onOpenChange={(next) => setSectionOpen("paid", next)}
           >
-            <ChoreGroup allChores={chores} checkIns={checkIns} chores={paidChores} onOverrideMissedStreak={onOverrideMissedStreak} childProfiles={childProfiles} isEmbedded onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Paid chores" />
+            <ChoreGroup allChores={chores} checkIns={checkIns} chores={paidChores} onOverrideMissedStreak={onOverrideMissedStreak} onRecordRoutineCheckIn={onRecordRoutineCheckIn} childProfiles={childProfiles} isEmbedded onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Paid chores" />
           </DashboardSection>
 
           <DashboardSection
@@ -608,7 +610,7 @@ export function ParentDashboard({
             title="Archived / Missed"
             onOpenChange={(next) => setSectionOpen("missed", next)}
           >
-            <ChoreGroup allChores={chores} checkIns={checkIns} chores={missedExpired} onOverrideMissedStreak={onOverrideMissedStreak} childProfiles={childProfiles} isEmbedded onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Missed / expired" />
+            <ChoreGroup allChores={chores} checkIns={checkIns} chores={missedExpired} onOverrideMissedStreak={onOverrideMissedStreak} onRecordRoutineCheckIn={onRecordRoutineCheckIn} childProfiles={childProfiles} isEmbedded onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Missed / expired" />
           </DashboardSection>
         </div>
 

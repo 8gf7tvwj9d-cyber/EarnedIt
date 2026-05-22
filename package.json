@@ -4,9 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev --webpack --hostname 127.0.0.1",
+    "dev:lan": "next dev --webpack --hostname 0.0.0.0",
     "build": "next build",
     "start": "next start --hostname 127.0.0.1",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:rrc": "node scripts/rrc-regression.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.3",

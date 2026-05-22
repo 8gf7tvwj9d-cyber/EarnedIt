@@ -221,6 +221,12 @@ function normalizeChore(chore: Chore): Chore {
       : legacyKind === "rolling"
         ? "routine"
         : chore.chore_kind;
+  const normalizedTemplateId =
+    normalizedKind === "optional" ? chore.template_chore_id ?? null : null;
+  const normalizedIsTemplate =
+    normalizedKind === "optional"
+      ? (chore.is_template ?? (normalizedTemplateId === null))
+      : false;
   const defaultStartDate =
     normalizedKind === "routine"
       ? chore.start_date ?? null
@@ -250,11 +256,9 @@ function normalizeChore(chore: Chore): Chore {
         : chore.rrc_schedule ?? null,
     proof_entries: normalizeProofEntries(chore),
     streak_overrides: chore.streak_overrides ?? [],
-    is_template:
-      chore.is_template ??
-      Boolean(normalizedKind === "optional" && chore.template_chore_id == null),
-    template_chore_id: chore.template_chore_id ?? null,
-    instance_period_key: chore.instance_period_key ?? null,
+    is_template: normalizedIsTemplate,
+    template_chore_id: normalizedTemplateId,
+    instance_period_key: normalizedKind === "optional" ? chore.instance_period_key ?? null : null,
   };
 }
 
@@ -1277,6 +1281,89 @@ export function saveRoutineCheckIn(
     persisted: true,
     rawStoredCheckInsCount: nextData.checkIns.length,
     filteredCheckInsCount: nextData.checkIns.filter((entry) => entry.chore_id === choreId).length,
+  };
+}
+
+const PARENT_RECORDED_CHECK_IN_PHOTO =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='360' viewBox='0 0 640 360'%3E%3Crect width='640' height='360' fill='%23f7efd9'/%3E%3Ccircle cx='96' cy='88' r='42' fill='%2379a85a' opacity='.28'/%3E%3Cpath d='M112 235c80-92 155-104 225-36 56 55 117 56 188 2v92H112z' fill='%2379a85a' opacity='.36'/%3E%3Ctext x='320' y='162' text-anchor='middle' font-family='Arial,sans-serif' font-size='28' font-weight='700' fill='%23322820'%3EParent recorded check-in%3C/text%3E%3Ctext x='320' y='204' text-anchor='middle' font-family='Arial,sans-serif' font-size='18' fill='%23604d3d'%3EAdded from the parent dashboard%3C/text%3E%3C/svg%3E";
+
+export function recordParentRoutineCheckIn(
+  appData: AppData,
+  choreId: string,
+  parentUser: User,
+  checkInDate = getTodayIsoDate(),
+) {
+  if (parentUser.role !== "parent") {
+    return {
+      appData,
+      message: "Only a parent can record a check-in.",
+      ok: false,
+    };
+  }
+
+  const chore = appData.chores.find((entry) => entry.id === choreId);
+  if (!chore || chore.chore_kind !== "routine" || chore.parent_id !== parentUser.id) {
+    return {
+      appData,
+      message: "Required repeating chore not found.",
+      ok: false,
+    };
+  }
+
+  const existingCheckIn = getCheckInForChoreDate(appData.checkIns, choreId, checkInDate);
+  if (existingCheckIn) {
+    return {
+      appData,
+      message: "That check-in is already logged for today.",
+      ok: false,
+    };
+  }
+
+  const rollingState = getRollingProgress(chore, appData.checkIns);
+  if (!rollingState.canCheckInToday) {
+    return {
+      appData,
+      message: rollingState.nextRestartDate
+        ? `Streak broken. Restarts ${rollingState.nextRestartDate}.`
+        : "Today is not an active required check-in day.",
+      ok: false,
+    };
+  }
+
+  const timestamp = new Date().toISOString();
+  const photo: ChoreProofPhoto = {
+    id: makeId("photo"),
+    photo_url: PARENT_RECORDED_CHECK_IN_PHOTO,
+    uploaded_at: timestamp,
+    label: "Extra",
+  };
+  const checkIn: CheckIn = {
+    id: makeId("checkin"),
+    chore_id: chore.id,
+    parent_id: chore.parent_id,
+    child_id: chore.child_id,
+    photo_url: photo.photo_url,
+    photos: [photo],
+    check_in_date: checkInDate,
+    submitted_at: timestamp,
+    uploaded_at: timestamp,
+  };
+
+  return {
+    appData: {
+      ...appData,
+      checkIns: [...appData.checkIns, checkIn],
+      chores: appData.chores.map((entry) =>
+        entry.id === choreId
+          ? {
+              ...entry,
+              updated_at: timestamp,
+            }
+          : entry,
+      ),
+    },
+    message: "Today's check-in was recorded.",
+    ok: true,
   };
 }
 export function overrideMissedStreak(

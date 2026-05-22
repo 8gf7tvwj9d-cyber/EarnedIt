@@ -173,8 +173,11 @@ export function getOptionalInstanceForPeriod(
   const currentPeriodKey = getCurrentPeriodKey(template, today);
   return chores.find(
     (chore) =>
+      isOptionalInstanceChore(chore) &&
       chore.template_chore_id === template.id &&
-      chore.instance_period_key === currentPeriodKey,
+      chore.instance_period_key === currentPeriodKey &&
+      chore.parent_id === template.parent_id &&
+      chore.child_id === template.child_id,
   );
 }
 
@@ -183,11 +186,19 @@ export function getOptionalTemplate(chores: Chore[], chore: Chore) {
     return chore;
   }
 
-  if (!chore.template_chore_id) {
+  if (!isOptionalInstanceChore(chore) || !chore.template_chore_id) {
     return null;
   }
 
-  return chores.find((entry) => entry.id === chore.template_chore_id) ?? null;
+  return (
+    chores.find(
+      (entry) =>
+        entry.id === chore.template_chore_id &&
+        isOptionalTemplateChore(entry) &&
+        entry.parent_id === chore.parent_id &&
+        entry.child_id === chore.child_id,
+    ) ?? null
+  );
 }
 
 export function getOptionalChoreState(
@@ -448,8 +459,11 @@ export function isChoreExpired(chore: Chore, checkIns: CheckIn[] = []) {
   const today = getTodayIsoDate();
   if (isRoutineChore(chore)) {
     const progress = getRollingProgress(chore, checkIns);
-    const endDate = chore.due_date ?? chore.start_date ?? getLocalDateFromTimestamp(chore.created_at);
-    return endDate < today && !progress.isEligible;
+    if (!chore.due_date) {
+      return false;
+    }
+
+    return chore.due_date < today && !progress.isEligible;
   }
 
   return Boolean(
