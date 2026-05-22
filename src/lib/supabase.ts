@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 type SupabaseRuntimeConfig = {
+  appBaseUrl: string | null;
   url: string | null;
   anonKey: string | null;
   serviceRoleKey: string | null;
@@ -28,10 +29,24 @@ function isLocalAuthTestModeEnabled() {
 
 export function getSupabaseRuntimeConfig(): SupabaseRuntimeConfig {
   return {
+    appBaseUrl: readEnv(process.env.NEXT_PUBLIC_EARNEDIT_APP_BASE_URL),
     url: readEnv(process.env.NEXT_PUBLIC_SUPABASE_URL),
     anonKey: readEnv(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
     serviceRoleKey: readEnv(process.env.SUPABASE_SERVICE_ROLE_KEY),
   };
+}
+
+export function getEarnedItAppBaseUrl() {
+  const configuredUrl = getSupabaseRuntimeConfig().appBaseUrl;
+  if (configuredUrl) {
+    return configuredUrl.replace(/\/+$/, "");
+  }
+
+  if (typeof window !== "undefined") {
+    return window.location.origin;
+  }
+
+  return null;
 }
 
 export function getSupabaseEnvState(): SupabaseEnvState {

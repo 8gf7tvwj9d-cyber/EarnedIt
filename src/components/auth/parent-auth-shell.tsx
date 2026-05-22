@@ -67,7 +67,7 @@ export function ParentAuthShell({
           Beta household access
         </div>
         <h2 className="mt-3 max-w-xl font-mono text-3xl font-black">
-          Sign in as a parent and keep each household fenced in.
+          Create an account or sign in as a parent.
         </h2>
         <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-200 sm:text-base">
           This beta phase uses real parent auth, household records, child records, chores, and
@@ -82,7 +82,7 @@ export function ParentAuthShell({
             onClick={() => setMode("signup")}
             type="button"
           >
-            Create household
+            Create account
           </button>
           <button
             className={`rounded-full px-4 py-2.5 text-sm font-black ${
@@ -91,7 +91,7 @@ export function ParentAuthShell({
             onClick={() => setMode("login")}
             type="button"
           >
-            Parent login
+            Sign in
           </button>
           {childLoginEnabled ? (
             <button
@@ -124,6 +124,31 @@ export function ParentAuthShell({
       </div>
 
       <div className="panel-soft rounded-[32px] p-6 sm:p-7">
+        <div className="mb-5 grid grid-cols-2 gap-2 rounded-2xl border border-[#d9c075]/50 bg-white/75 p-1">
+          <button
+            className={`rounded-xl px-3 py-3 text-sm font-black ${
+              mode === "signup"
+                ? "bg-[#2f271f] text-white shadow-sm"
+                : "text-[#5f5747] hover:bg-[#fff7df]"
+            }`}
+            onClick={() => setMode("signup")}
+            type="button"
+          >
+            Create account
+          </button>
+          <button
+            className={`rounded-xl px-3 py-3 text-sm font-black ${
+              mode === "login"
+                ? "bg-[#2f271f] text-white shadow-sm"
+                : "text-[#5f5747] hover:bg-[#fff7df]"
+            }`}
+            onClick={() => setMode("login")}
+            type="button"
+          >
+            Sign in
+          </button>
+        </div>
+
         {mode === "signup" ? (
           <div className="space-y-4">
             <div>
@@ -188,6 +213,13 @@ export function ParentAuthShell({
             >
               {isSubmitting ? "Creating..." : "Create parent account"}
             </button>
+            <button
+              className="w-full rounded-2xl border border-[#d9c075]/50 bg-white px-5 py-3 text-sm font-black text-[#5f5747]"
+              onClick={() => setMode("login")}
+              type="button"
+            >
+              Already have an account? Sign in
+            </button>
           </div>
         ) : mode === "login" ? (
           <div className="space-y-4">
@@ -231,6 +263,13 @@ export function ParentAuthShell({
               type="button"
             >
               {isSubmitting ? "Signing in..." : "Sign in as parent"}
+            </button>
+            <button
+              className="w-full rounded-2xl border border-[#d9c075]/50 bg-white px-5 py-3 text-sm font-black text-[#5f5747]"
+              onClick={() => setMode("signup")}
+              type="button"
+            >
+              New here? Create an account
             </button>
           </div>
         ) : (

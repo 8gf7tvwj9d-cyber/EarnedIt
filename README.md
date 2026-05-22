@@ -84,6 +84,7 @@ Use this shape for LAN QR testing:
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 NEXT_PUBLIC_EARNEDIT_AUTH_TEST_MODE=false
+NEXT_PUBLIC_EARNEDIT_APP_BASE_URL=http://192.168.1.25:3000
 NEXT_PUBLIC_EARNEDIT_CHILD_LINK_BASE_URL=http://192.168.1.25:3000
 ```
 
@@ -93,6 +94,7 @@ Use this shape for deployed QR testing:
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 NEXT_PUBLIC_EARNEDIT_AUTH_TEST_MODE=false
+NEXT_PUBLIC_EARNEDIT_APP_BASE_URL=https://your-deployed-earnedit-url
 NEXT_PUBLIC_EARNEDIT_CHILD_LINK_BASE_URL=https://your-deployed-earnedit-url
 ```
 
@@ -118,9 +120,12 @@ Set:
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY` for server-only admin tasks such as beta household provisioning or back-office repair scripts
 - `NEXT_PUBLIC_EARNEDIT_AUTH_TEST_MODE=false` by default. This is an emergency local fallback only. Set to `true` only in a non-production build when Supabase email confirmation or rate limits block parent signup while you are debugging. In that mode the parent signup flow creates a local test household and skips Supabase signup; production builds ignore the bypass.
+- `NEXT_PUBLIC_EARNEDIT_APP_BASE_URL` for Supabase email confirmation redirects. Use the reachable app URL, such as `http://192.168.1.25:3000` during LAN testing or the deployed app URL in hosted testing.
 - `NEXT_PUBLIC_EARNEDIT_CHILD_LINK_BASE_URL` for child QR links. Use a LAN URL such as `http://192.168.1.25:3000` for phone testing against `npm run dev:lan`, or use a deployed app URL for hosted testing.
 
 When Supabase env vars are present, beta uses real Supabase Auth and database sync. If Supabase is configured but migrations, RLS, or auth settings are broken, the app should show the Supabase error instead of silently falling back to local data.
+
+For Supabase email confirmation, also add the same app base URL to the Supabase Auth redirect URL allow-list. During LAN testing, that means adding a URL like `http://192.168.1.25:3000` in the Supabase dashboard so confirmation links can return to the dev server.
 
 ## Beta Supabase setup checklist
 

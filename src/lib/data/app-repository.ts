@@ -16,6 +16,7 @@ import {
   type AppDataInitialization,
 } from "@/lib/storage/app-state";
 import {
+  getEarnedItAppBaseUrl,
   getSupabaseBrowserClient,
   getSupabaseEnvState,
   getSupabaseSetupWarning,
@@ -1516,6 +1517,7 @@ export async function signUpParentWithHousehold(
     email,
     password: draft.password,
     options: {
+      emailRedirectTo: getEarnedItAppBaseUrl() ?? undefined,
       data: {
         display_name: displayName,
       },
