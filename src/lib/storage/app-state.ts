@@ -8,6 +8,7 @@ import {
   getTodayIsoDate,
   isOptionalChore,
 } from "@/lib/chore-helpers";
+import { debugLog } from "@/lib/debug";
 import {
   getCheckInForChoreDate,
   getLocalDateFromTimestamp,
@@ -1131,7 +1132,7 @@ export function addRollingProof(
 export function submitRollingChore(appData: AppData, choreId: string): AppData {
   const timestamp = new Date().toISOString();
 
-  console.log("[Earned] submit routine for approval requested", { choreId });
+  debugLog("chores", "submit routine for approval requested", { choreId });
 
   return {
     ...appData,
@@ -1141,7 +1142,7 @@ export function submitRollingChore(appData: AppData, choreId: string): AppData {
       }
 
       const progress = getRollingProgress(chore, appData.checkIns);
-      console.log("[Earned] routine progress before submit", {
+      debugLog("chores", "routine progress before submit", {
         choreId,
         completed: progress.completedDates.length,
         required: progress.requiredDates.length,
@@ -1168,7 +1169,7 @@ export function saveRoutineCheckIn(
   photosInput: ProofPhotoInput[] | string,
   checkInDate = getTodayIsoDate(),
 ) {
-  console.log("[Earned] Save Check-In clicked", { choreId, checkInDate });
+  debugLog("chores", "Save Check-In clicked", { choreId, checkInDate });
 
   const chore = appData.chores.find((entry) => entry.id === choreId);
   if (!chore) {
@@ -1198,14 +1199,14 @@ export function saveRoutineCheckIn(
     };
   }
 
-  console.log("[Earned] photo upload success", {
+  debugLog("chores", "photo upload success", {
     choreId,
     photoCount: photos.length,
   });
 
   const existingCheckIn = getCheckInForChoreDate(appData.checkIns, choreId, checkInDate);
   if (existingCheckIn) {
-    console.warn("[Earned] duplicate Save Check-In prevented", {
+    debugLog("chores", "duplicate Save Check-In prevented", {
       choreId,
       checkInDate,
       existingCheckInId: existingCheckIn.id,
@@ -1247,7 +1248,7 @@ export function saveRoutineCheckIn(
     uploaded_at: photos[0]?.uploaded_at ?? submittedAt,
   };
 
-  console.log("[Earned] check-in record created", checkIn);
+  debugLog("chores", "check-in record created", checkIn);
 
   const nextData = {
     ...appData,
@@ -1262,13 +1263,13 @@ export function saveRoutineCheckIn(
     ),
   };
 
-  console.log("[Earned] counter recalculation after check-in", {
+  debugLog("chores", "counter recalculation after check-in", {
     choreId,
     refreshedCheckIns: nextData.checkIns.filter((entry) => entry.chore_id === choreId).length,
     persisted: true,
   });
 
-  console.log("[Earned] response returned to frontend", {
+  debugLog("chores", "response returned to frontend", {
     choreId,
     ok: true,
     checkInDate,

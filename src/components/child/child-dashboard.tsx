@@ -8,6 +8,7 @@ import { ImageLightbox } from "@/components/image-lightbox";
 import { StatusBadge } from "@/components/status-badge";
 import { AppIcon, getChoreIcon } from "@/components/ui-icons";
 import { formatCurrency, formatDate, formatReadableDateTime, formatShortDateTime } from "@/lib/format";
+import { debugLog } from "@/lib/debug";
 import { compressProofPhoto } from "@/lib/photo";
 import {
   formatRepeatSchedule,
@@ -274,7 +275,7 @@ export function ChildDashboard({
       return;
     }
 
-    console.log("[Earned] Confirm today check-in clicked", { choreId: chore.id });
+    debugLog("chores", "Confirm today check-in clicked", { choreId: chore.id });
     setRoutineSaving((current) => ({ ...current, [chore.id]: true }));
     try {
       const result = await onAddRollingProof(chore.id, photos);

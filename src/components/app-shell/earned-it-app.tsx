@@ -6,6 +6,7 @@ import { cloneBundledDemoData, loadInitialAppData } from "@/components/app-shell
 import { ChildDashboard } from "@/components/child/child-dashboard";
 import { ParentDashboard } from "@/components/parent/parent-dashboard";
 import { AppIcon } from "@/components/ui-icons";
+import { debugLog } from "@/lib/debug";
 import {
   approveChore,
   clearCompletedTestData,
@@ -118,7 +119,7 @@ export function EarnedItApp() {
 
   async function syncAppData(nextData: AppData) {
     const { appData: refreshed, ok, storageMode: mode } = await commitSharedAppData(nextData);
-    console.log("[Earned] parent/child state refreshed", {
+    debugLog("sync", "parent/child state refreshed", {
       chores: refreshed.chores.length,
       checkIns: refreshed.checkIns.length,
       persisted: ok,
