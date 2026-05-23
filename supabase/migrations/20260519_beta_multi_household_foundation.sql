@@ -212,10 +212,9 @@ begin
       add constraint chores_amount_cents_check check (amount_cents >= 0) not valid;
   end if;
 
-  if not exists (select 1 from pg_constraint where conname = 'chores_status_check' and conrelid = 'public.chores'::regclass) then
-    alter table public.chores
-      add constraint chores_status_check check (status in ('available', 'submitted', 'approved', 'rejected', 'paid')) not valid;
-  end if;
+  alter table public.chores drop constraint if exists chores_status_check;
+  alter table public.chores
+    add constraint chores_status_check check (status in ('available', 'submitted', 'approved', 'rejected', 'paid', 'expired')) not valid;
 
   if not exists (select 1 from pg_constraint where conname = 'chore_completions_status_check' and conrelid = 'public.chore_completions'::regclass) then
     alter table public.chore_completions

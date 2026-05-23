@@ -50,6 +50,7 @@ import {
 } from "@/types/app";
 
 type AuthSessionUser = {
+  displayName?: string | null;
   email?: string | null;
   id: string;
 };
@@ -364,6 +365,24 @@ function getRequiredMigrationMessage(missingObjects: string[]) {
   return `${detected}Run these beta-multi-user Supabase migrations in order: ${REQUIRED_BETA_MIGRATIONS.join(" -> ")}. Then confirm expected objects: ${REQUIRED_SCHEMA_OBJECTS.join(", ")}.`;
 }
 
+function isDatabaseSetupError(error: unknown) {
+  return isMissingMigrationError(error) || isRlsDeniedError(error);
+}
+
+function logSupabaseDiagnostic(context: string, error: unknown) {
+  const missingMigrationObjects = getMissingMigrationObjects(error);
+  console.warn(`[Earned auth] ${context}`, error);
+  console.info("[Earned auth] Beta Supabase setup diagnostic", {
+    context,
+    missingMigrationObjects,
+    migrationOrder: REQUIRED_BETA_MIGRATIONS,
+    setupDiagnostic: getRequiredMigrationMessage(missingMigrationObjects),
+  });
+  logSupabaseAuthDebug(context, {
+    missingMigrationObjects,
+  });
+}
+
 function isRlsDeniedError(error: unknown) {
   const message = getErrorMessage(error).toLowerCase();
   return (
@@ -384,16 +403,8 @@ function isNetworkError(error: unknown) {
 }
 
 function describeSupabaseError(error: unknown, fallback: string) {
-  if (isMissingMigrationError(error)) {
-    return `Supabase migration is missing or stale. ${getRequiredMigrationMessage(
-      getMissingMigrationObjects(error),
-    )}`;
-  }
-
-  if (isRlsDeniedError(error)) {
-    return `Supabase denied access through RLS. ${getRequiredMigrationMessage(
-      getMissingMigrationObjects(error),
-    )}`;
+  if (isDatabaseSetupError(error)) {
+    return "The beta database is not ready for this account yet. Please ask an admin to run the latest beta Supabase setup, then try again.";
   }
 
   if (isNetworkError(error)) {
@@ -1005,8 +1016,32 @@ async function getSignedInAuthUser(): Promise<AuthSessionUser | null> {
   });
 
   return {
-    id: session.user.id,
-    email: session.user.email ?? null,
+      id: session.user.id,
+      email: session.user.email ?? null,
+      displayName:
+        typeof session.user.user_metadata?.display_name === "string"
+          ? session.user.user_metadata.display_name
+          : null,
+    };
+}
+
+function getAuthUserDisplayName(authUser: AuthSessionUser, fallbackEmail: string) {
+  const metadataName = authUser.displayName?.trim();
+  if (metadataName) {
+    return metadataName;
+  }
+
+  const emailName = (authUser.email ?? fallbackEmail).split("@")[0]?.trim();
+  return emailName ? toUsername(emailName).replace(/-/g, " ") : "Parent";
+}
+
+function getRepairParentSignup(authUser: AuthSessionUser, fallbackEmail: string): PendingParentSignup {
+  const email = (authUser.email ?? fallbackEmail).trim().toLowerCase();
+  const displayName = getAuthUserDisplayName(authUser, email);
+  return {
+    displayName,
+    email,
+    householdName: `${displayName}'s Household`,
   };
 }
 
@@ -1393,7 +1428,7 @@ export async function loadAppData(): Promise<SharedAppDataInitialization> {
       syncWarning: null,
     };
   } catch (error) {
-    console.warn("[Earned] Supabase household bootstrap failed.", error);
+    logSupabaseDiagnostic("household_bootstrap_failed", error);
     logSupabaseAuthDebug("household_bootstrap_failed", {
       sessionExists: Boolean(authUserForFailure),
       userIdExists: Boolean(authUserForFailure?.id),
@@ -1646,11 +1681,19 @@ export async function signUpParentWithHousehold(
     ? {
         id: signUpResult.data.session.user.id,
         email: signUpResult.data.session.user.email ?? email,
+        displayName:
+          typeof signUpResult.data.session.user.user_metadata?.display_name === "string"
+            ? signUpResult.data.session.user.user_metadata.display_name
+            : displayName,
       }
     : signUpResult.data.user
     ? {
         id: signUpResult.data.user.id,
         email: signUpResult.data.user.email ?? email,
+        displayName:
+          typeof signUpResult.data.user.user_metadata?.display_name === "string"
+            ? signUpResult.data.user.user_metadata.display_name
+            : displayName,
       }
     : await getSignedInAuthUser();
 
@@ -1733,7 +1776,7 @@ export async function signUpParentWithHousehold(
       message: `Household ${created.household?.name ?? graph.household.name} is ready.`,
     };
   } catch (error) {
-    console.warn("[Earned auth] Household bootstrap failed after signup.", error);
+    logSupabaseDiagnostic("household_bootstrap_failed_after_signup", error);
     return {
       appData: localAppData,
       authState: getDatabaseAuthState(error),
@@ -1837,6 +1880,10 @@ export async function signInParent(
     ? {
         id: signInResult.data.user.id,
         email: signInResult.data.user.email ?? null,
+        displayName:
+          typeof signInResult.data.user.user_metadata?.display_name === "string"
+            ? signInResult.data.user.user_metadata.display_name
+            : null,
       }
     : await getSignedInAuthUser();
 
@@ -1854,44 +1901,42 @@ export async function signInParent(
     const graph = await loadRemoteHouseholdGraph(authUser);
     if (!graph) {
       const pendingSignup = readPendingParentSignup(authUser.email ?? draft.email);
-      if (pendingSignup) {
-        const created = await createRemoteParentHousehold(authUser, pendingSignup);
-        if (created.graph) {
-          const remoteState = await loadRemoteChoreState(created.graph.household.id);
-          const merged = mergeRemoteHouseholdIntoLocal(
-            localAppData,
-            created.graph,
-            authUser,
-            remoteState,
-          );
-          writeAppData(merged);
-          clearPendingParentSignup();
-          return {
-            appData: merged,
-            authState: "ready",
-            ok: true,
-            storageMode: "supabase",
-            message: `Household ${created.household?.name ?? created.graph.household.name} is ready.`,
-          };
-        }
+      const repairSignup = pendingSignup ?? getRepairParentSignup(authUser, draft.email);
+      if (!pendingSignup) {
+        console.info("[Earned auth] Parent profile missing after login; creating repair household.", {
+          authUserId: authUser.id,
+          email: repairSignup.email,
+        });
+      }
 
+      const created = await createRemoteParentHousehold(authUser, repairSignup);
+      if (created.graph) {
+        const remoteState = await loadRemoteChoreState(created.graph.household.id);
+        const merged = mergeRemoteHouseholdIntoLocal(
+          localAppData,
+          created.graph,
+          authUser,
+          remoteState,
+        );
+        writeAppData(merged);
+        clearPendingParentSignup();
         return {
-          appData: localAppData,
-          authState: created.authState,
-          ok: false,
+          appData: merged,
+          authState: "ready",
+          ok: true,
           storageMode: "supabase",
-          message:
-            created.message ??
-            "Signed in, but the pending household setup could not be completed.",
+          message: `Household ${created.household?.name ?? created.graph.household.name} is ready.`,
         };
       }
 
       return {
         appData: localAppData,
-        authState: "household_missing",
+        authState: created.authState,
         ok: false,
         storageMode: "supabase",
-        message: "This account is signed in, but no household profile was found.",
+        message:
+          created.message ??
+          "Signed in, but the household setup could not be completed.",
       };
     }
 
@@ -1907,7 +1952,7 @@ export async function signInParent(
       message: `Signed in to ${graph.household.name}.`,
     };
   } catch (error) {
-    console.warn("[Earned auth] Household bootstrap failed after login.", error);
+    logSupabaseDiagnostic("household_bootstrap_failed_after_login", error);
     return {
       appData: localAppData,
       authState: getDatabaseAuthState(error),
