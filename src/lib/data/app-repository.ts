@@ -276,6 +276,27 @@ function getRepositoryHouseholdId(appData: AppData) {
   return getHouseholdId(appData);
 }
 
+function makeUuid() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+
+  if (typeof crypto === "undefined" || !("getRandomValues" in crypto)) {
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (char) => {
+      const random = Math.floor(Math.random() * 16);
+      const value = char === "x" ? random : (random & 0x3) | 0x8;
+      return value.toString(16);
+    });
+  }
+
+  return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (char) =>
+    (
+      Number(char) ^
+      (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (Number(char) / 4)))
+    ).toString(16),
+  );
+}
+
 function getCurrentTimestamp() {
   return new Date().toISOString();
 }
@@ -302,6 +323,24 @@ function getErrorMessage(error: unknown) {
   }
 
   return "Unknown Supabase error.";
+}
+
+function getErrorCode(error: unknown) {
+  if (error && typeof error === "object" && "code" in error) {
+    const code = (error as { code?: unknown }).code;
+    return typeof code === "string" ? code : null;
+  }
+
+  return null;
+}
+
+function isNoRowsError(error: unknown) {
+  const message = getErrorMessage(error).toLowerCase();
+  return (
+    getErrorCode(error) === "PGRST116" ||
+    message.includes("no rows") ||
+    message.includes("0 rows")
+  );
 }
 
 function isMissingMigrationError(error: unknown) {
@@ -365,10 +404,6 @@ function getRequiredMigrationMessage(missingObjects: string[]) {
   return `${detected}Run these beta-multi-user Supabase migrations in order: ${REQUIRED_BETA_MIGRATIONS.join(" -> ")}. Then confirm expected objects: ${REQUIRED_SCHEMA_OBJECTS.join(", ")}.`;
 }
 
-function isDatabaseSetupError(error: unknown) {
-  return isMissingMigrationError(error) || isRlsDeniedError(error);
-}
-
 function logSupabaseDiagnostic(context: string, error: unknown) {
   const missingMigrationObjects = getMissingMigrationObjects(error);
   console.warn(`[Earned auth] ${context}`, error);
@@ -403,8 +438,12 @@ function isNetworkError(error: unknown) {
 }
 
 function describeSupabaseError(error: unknown, fallback: string) {
-  if (isDatabaseSetupError(error)) {
+  if (isMissingMigrationError(error)) {
     return "The beta database is not ready for this account yet. Please ask an admin to run the latest beta Supabase setup, then try again.";
+  }
+
+  if (isRlsDeniedError(error)) {
+    return "We signed you in, but household setup could not finish. Please try again or contact support.";
   }
 
   if (isNetworkError(error)) {
@@ -953,14 +992,28 @@ async function loadRemoteHouseholdGraph(authUser: AuthSessionUser): Promise<Hous
     return null;
   }
 
-  const { data: household, error: householdError } = await supabase
+  const { data: loadedHousehold, error: householdError } = await supabase
     .from("households")
     .select("id, name, created_at, updated_at")
     .eq("id", parentProfile.household_id)
     .single<HouseholdRow>();
+  let household = loadedHousehold;
 
   if (householdError) {
-    throw householdError;
+    if (!isNoRowsError(householdError)) {
+      throw householdError;
+    }
+
+    console.info("[Earned auth] Parent profile points to a missing household; repairing.", {
+      authUserId: authUser.id,
+      householdId: parentProfile.household_id,
+    });
+    const repairedHousehold = await repairMissingParentHousehold(parentProfile, authUser);
+    household = repairedHousehold;
+  }
+
+  if (!household) {
+    throw new Error("Parent household could not be loaded.");
   }
 
   const { data: children, error: childrenError } = await supabase
@@ -983,6 +1036,41 @@ async function loadRemoteHouseholdGraph(authUser: AuthSessionUser): Promise<Hous
     childProfiles,
     users: [parentUser, ...childProfiles.map((childProfile) => buildChildUser(childProfile))],
   };
+}
+
+async function repairMissingParentHousehold(
+  parentProfile: ProfileRow,
+  authUser: AuthSessionUser,
+): Promise<HouseholdRow> {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) {
+    throw new Error("Supabase is not configured yet.");
+  }
+
+  const timestamp = getCurrentTimestamp();
+  const householdName = `${parentProfile.display_name?.trim() || getAuthUserDisplayName(authUser, parentProfile.email ?? authUser.email ?? "")}'s Household`;
+  const household: HouseholdRow = {
+    id: parentProfile.household_id,
+    name: householdName,
+    created_at: timestamp,
+    updated_at: timestamp,
+  };
+  const { error: insertError } = await supabase.from("households").insert(household);
+  if (insertError && getErrorCode(insertError) !== "23505") {
+    throw insertError;
+  }
+
+  const { data: reloadedHousehold, error: reloadError } = await supabase
+    .from("households")
+    .select("id, name, created_at, updated_at")
+    .eq("id", parentProfile.household_id)
+    .single<HouseholdRow>();
+
+  if (reloadError) {
+    throw reloadError;
+  }
+
+  return reloadedHousehold;
 }
 
 async function getSignedInAuthUser(): Promise<AuthSessionUser | null> {
@@ -1132,13 +1220,13 @@ async function createRemoteParentHousehold(
   }
 
   const timestamp = getCurrentTimestamp();
-  const { data: household, error: householdError } = await supabase
-    .from("households")
-    .insert({
-      name: pendingSignup.householdName,
-    })
-    .select("id, name, created_at, updated_at")
-    .single<HouseholdRow>();
+  const household: HouseholdRow = {
+    id: makeUuid(),
+    name: pendingSignup.householdName,
+    created_at: timestamp,
+    updated_at: timestamp,
+  };
+  const { error: householdError } = await supabase.from("households").insert(household);
 
   if (householdError) {
     return {
