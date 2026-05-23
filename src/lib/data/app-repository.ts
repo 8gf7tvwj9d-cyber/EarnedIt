@@ -1241,23 +1241,30 @@ async function createRemoteParentHousehold(
     console.info("[Earned auth] Household created.", { householdId: household.id });
   }
 
-  const { error: profileError } = await supabase
-    .from("profiles")
-    .upsert(
-      {
-        household_id: household.id,
-        user_id: authUser.id,
-        email: pendingSignup.email,
-        display_name: pendingSignup.displayName,
-        role: "parent",
-        household_role: "owner",
-        created_at: timestamp,
-        updated_at: timestamp,
-      },
-      { onConflict: "user_id" },
-    );
+  const { error: profileError } = await supabase.from("profiles").insert({
+    household_id: household.id,
+    user_id: authUser.id,
+    email: pendingSignup.email,
+    display_name: pendingSignup.displayName,
+    role: "parent",
+    household_role: "owner",
+    created_at: timestamp,
+    updated_at: timestamp,
+  });
 
   if (profileError) {
+    if (getErrorCode(profileError) === "23505") {
+      const graph = await loadRemoteHouseholdGraph(authUser);
+      if (graph) {
+        return {
+          authState: "ready",
+          graph,
+          household: null,
+          message: null,
+        };
+      }
+    }
+
     return {
       authState: getDatabaseAuthState(profileError),
       graph: null,
