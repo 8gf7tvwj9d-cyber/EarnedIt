@@ -9,6 +9,13 @@ import { ChildDashboard } from "@/components/child/child-dashboard";
 import { ParentDashboard } from "@/components/parent/parent-dashboard";
 import { AppIcon } from "@/components/ui-icons";
 import {
+  BrowserNotificationStatus,
+  getBrowserNotificationStatus,
+  requestBrowserNotificationPermission,
+  sendBrowserNotification,
+} from "@/lib/browser-notifications";
+import { debugLog } from "@/lib/debug";
+import {
   approveChore,
   clearCompletedTestData,
   completeChore,
@@ -26,6 +33,7 @@ import {
   overrideMissedStreak,
   persistLocalAppData,
   pullAppDataSnapshot,
+  recordParentRoutineCheckIn,
   rejectChore,
   resetLocalAppData,
   regenerateChildDeviceLink,
@@ -73,8 +81,11 @@ export function EarnedItApp() {
   const [authState, setAuthState] = useState<AuthFlowState>("signed_out");
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
+  const [notificationStatus, setNotificationStatus] =
+    useState<BrowserNotificationStatus>(() => getBrowserNotificationStatus());
   const [toasts, setToasts] = useState<Toast[]>([]);
   const latestAppDataRef = useRef(appData);
+  const notificationBaselineRef = useRef<AppData | null>(null);
   const mutationQueueRef = useRef<Promise<void>>(Promise.resolve());
   const parentSignupInFlightRef = useRef(false);
   const parentSignupAttemptRef = useRef(0);
@@ -241,6 +252,53 @@ export function EarnedItApp() {
     return () => window.clearInterval(timer);
   }, [appData.session.currentUserId, hasLoadedStoredData, storageMode]);
 
+  let currentUser: User | null = null;
+  let childProfile: ChildProfile | null = null;
+  let childChores = [] as AppData["chores"];
+  let childPayouts = [] as AppData["payouts"];
+  let householdName: string | null = null;
+  let parentProfile: Profile | null = null;
+  let householdChildren: ChildProfile[] = [];
+  let householdLoaded = false;
+  let derivationError: unknown = null;
+
+  try {
+    currentUser = getCurrentUser(appData);
+    childProfile = getChildProfileForUser(appData.childProfiles ?? [], currentUser);
+    const profileId = childProfile?.id ?? null;
+    childChores = childProfile
+      ? getChores(appData).filter((chore) => chore.child_id === profileId)
+      : [];
+    childPayouts = childProfile
+      ? getPayments(appData).filter((payout) => payout.child_id === profileId)
+      : [];
+    householdName = getHousehold(appData)?.name ?? null;
+    parentProfile = appData.profiles.find((profile) => profile.role === "parent") ?? null;
+    householdChildren = getChildren(appData);
+    householdLoaded = Boolean(getHousehold(appData));
+  } catch (error) {
+    derivationError = error;
+  }
+
+  useEffect(() => {
+    if (!hasLoadedStoredData || !currentUser) {
+      notificationBaselineRef.current = appData;
+      return;
+    }
+
+    const previous = notificationBaselineRef.current;
+    notificationBaselineRef.current = appData;
+    if (!previous || getBrowserNotificationStatus() !== "granted") {
+      return;
+    }
+
+    getBrowserNotificationMessages(previous, appData, currentUser, childProfile).forEach(
+      (notification) => {
+        sendBrowserNotification(notification.title, notification.body, notification.tag);
+      },
+    );
+  }, [appData, childProfile, currentUser, hasLoadedStoredData]);
+
   function pushToast(message: string) {
     const id = Date.now();
     setToasts((current) => [...current, { id, message }]);
@@ -248,6 +306,22 @@ export function EarnedItApp() {
     window.setTimeout(() => {
       setToasts((current) => current.filter((toast) => toast.id !== id));
     }, 2600);
+  }
+
+  async function handleEnableNotifications() {
+    const nextStatus = await requestBrowserNotificationPermission();
+    setNotificationStatus(nextStatus);
+    if (nextStatus === "granted") {
+      pushToast("Browser pings enabled while this app is open");
+      return;
+    }
+
+    if (nextStatus === "needs-secure-origin") {
+      pushToast("Phone pings need HTTPS or a supported installed app");
+      return;
+    }
+
+    pushToast("Browser pings are not available here");
   }
 
   function updateAppData(nextData: AppData) {
@@ -263,7 +337,7 @@ export function EarnedItApp() {
       ok,
       storageMode: mode,
     } = await syncRepositoryAppData(nextData);
-    console.log("[Earned] parent/child state refreshed", {
+    debugLog("sync", "parent/child state refreshed", {
       chores: refreshed.chores.length,
       checkIns: refreshed.checkIns.length,
       persisted: ok,
@@ -487,31 +561,8 @@ export function EarnedItApp() {
     }
   }
 
-  let currentUser: User | null = null;
-  let childProfile: ChildProfile | null = null;
-  let childChores = [] as AppData["chores"];
-  let childPayouts = [] as AppData["payouts"];
-  let householdName: string | null = null;
-  let parentProfile: Profile | null = null;
-  let householdChildren: ChildProfile[] = [];
-  let householdLoaded = false;
-
-  try {
-    currentUser = getCurrentUser(appData);
-    childProfile = getChildProfileForUser(appData.childProfiles ?? [], currentUser);
-    const profileId = childProfile?.id ?? null;
-    childChores = childProfile
-      ? getChores(appData).filter((chore) => chore.child_id === profileId)
-      : [];
-    childPayouts = childProfile
-      ? getPayments(appData).filter((payout) => payout.child_id === profileId)
-      : [];
-    householdName = getHousehold(appData)?.name ?? null;
-    parentProfile = appData.profiles.find((profile) => profile.role === "parent") ?? null;
-    householdChildren = getChildren(appData);
-    householdLoaded = Boolean(getHousehold(appData));
-  } catch (error) {
-    console.warn("[Earned] Top-level app derivation failed.", error);
+  if (derivationError) {
+    console.warn("[Earned] Top-level app derivation failed.", derivationError);
     return (
       <main className="min-h-screen px-3 py-4 text-slate-900 sm:px-5 sm:py-6">
         <div className="mx-auto max-w-3xl">
@@ -589,6 +640,19 @@ export function EarnedItApp() {
                     Sign out
                   </button>
                 </>
+              ) : null}
+              {currentUser ? (
+                <button
+                  className="hero-button-secondary rounded-full px-4 py-2.5 text-sm font-black"
+                  onClick={() => void handleEnableNotifications()}
+                  type="button"
+                >
+                  {notificationStatus === "granted"
+                    ? "Pings on"
+                    : notificationStatus === "needs-secure-origin"
+                      ? "Pings need HTTPS"
+                      : "Enable pings"}
+                </button>
               ) : null}
             </div>
             {syncWarning ? (
@@ -670,6 +734,15 @@ export function EarnedItApp() {
                 void enqueueMutation(async (snapshot) => {
                   await syncAppData(overrideMissedStreak(snapshot, choreId, missedDate, note, currentUser));
                   pushToast("Missed streak excused");
+                });
+              }}
+              onRecordRoutineCheckIn={(choreId) => {
+                void enqueueMutation(async (snapshot) => {
+                  const result = recordParentRoutineCheckIn(snapshot, choreId, currentUser);
+                  if (result.ok) {
+                    await syncAppData(result.appData);
+                  }
+                  pushToast(result.message);
                 });
               }}
               onMarkPaid={(childId, notes, paymentItems?: PaymentLineItem[]) => {
@@ -834,6 +907,59 @@ function buildChildLink(accessToken: string | null | undefined) {
     link: `${baseUrl}/child-link?token=${encodeURIComponent(accessToken)}`,
     message: null,
   };
+}
+
+function getBrowserNotificationMessages(
+  previous: AppData,
+  current: AppData,
+  currentUser: User,
+  childProfile: ChildProfile | null,
+) {
+  const previousChores = new Map(previous.chores.map((chore) => [chore.id, chore]));
+  if (currentUser.role === "parent") {
+    return current.chores
+      .filter((chore) => {
+        const previousChore = previousChores.get(chore.id);
+        return (
+          chore.parent_id === currentUser.id &&
+          chore.status === "submitted" &&
+          previousChore?.status !== "submitted"
+        );
+      })
+      .map((chore) => {
+        const childName =
+          current.childProfiles.find((profile) => profile.id === chore.child_id)?.name ?? "Child";
+        return {
+          title: "Chore submitted",
+          body: `${childName} submitted ${chore.title}.`,
+          tag: `submitted-${chore.id}`,
+        };
+      });
+  }
+
+  if (!childProfile) {
+    return [];
+  }
+
+  return current.chores
+    .filter((chore) => {
+      const previousChore = previousChores.get(chore.id);
+      return (
+        chore.child_id === childProfile.id &&
+        previousChore?.status !== chore.status &&
+        (chore.status === "approved" || chore.status === "rejected" || chore.status === "paid")
+      );
+    })
+    .map((chore) => ({
+      title:
+        chore.status === "approved"
+          ? "Chore approved"
+          : chore.status === "rejected"
+            ? "Chore needs another try"
+            : "Reward paid",
+      body: `${chore.title} is now ${chore.status}.`,
+      tag: `${chore.status}-${chore.id}`,
+    }));
 }
 
 function FirstTimeSetupScreen({

@@ -9,18 +9,35 @@ export function SummaryCard({
   label,
   value,
   copy,
+  onClick,
 }: {
   accent: string;
   icon: "wallet" | "clock" | "trophy" | "seed" | "leaf" | "sprout";
   label: string;
   value: string;
   copy: string;
+  onClick?: () => void;
 }) {
-  return (
-    <div className={`metric-card metric-card-premium glass-card rounded-[26px] bg-gradient-to-br ${accent} p-4`}>
+  const className = `metric-card metric-card-premium glass-card rounded-[26px] bg-gradient-to-br ${accent} p-4 text-left`;
+  const content = (
+    <>
       <div className="kicker-row text-slate-600"><span className="kicker-icon"><AppIcon className="h-4 w-4" name={icon} /></span>{label}</div>
       <p className="metric-value mt-3 font-mono text-3xl font-black text-[#2c281f]">{value}</p>
       <p className="mt-1 max-w-52 text-sm leading-6 text-[#5f5747]">{copy}</p>
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <button className={`${className} action-button w-full`} onClick={onClick} type="button">
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <div className={className}>
+      {content}
     </div>
   );
 }

@@ -33,6 +33,7 @@ export function ChoreGroup({
   onOpenChange,
   onOpenLightbox,
   onOverrideMissedStreak,
+  onRecordRoutineCheckIn,
   sortControl,
 }: {
   title: string;
@@ -48,6 +49,7 @@ export function ChoreGroup({
   onOpenChange?: (next: boolean) => void;
   onOpenLightbox: (src: string, alt: string) => void;
   onOverrideMissedStreak: (choreId: string, missedDate: string, note: string) => void;
+  onRecordRoutineCheckIn: (choreId: string) => void;
   sortControl?: ReactNode;
 }) {
   const [overrideTargetId, setOverrideTargetId] = useState<string | null>(null);
@@ -85,6 +87,12 @@ export function ChoreGroup({
           const optionalState = isOptionalChore(chore)
             ? getOptionalChoreState(allChores, chore, undefined, checkIns)
             : null;
+          const computedStatus = getComputedStatus(chore, checkIns);
+          const canRecordRoutineCheckIn = Boolean(
+            isRoutineChore(chore) &&
+              streakStatus?.canCheckInToday &&
+              (computedStatus === "available" || computedStatus === "rejected"),
+          );
           const proofEntries = getProofEntries(chore, checkIns);
           return (
             <article key={chore.id} className={`parent-card card-spotlight rounded-[26px] border p-4 shadow-[0_10px_24px_rgba(56,44,103,0.06)] ${brokenStreak ? "border-rose-300 bg-rose-950/35" : "border-white/12"}`}>
@@ -104,7 +112,7 @@ export function ChoreGroup({
                 </div>
                 <StatusBadge
                   label={brokenStreak ? "streak broken" : undefined}
-                  status={getComputedStatus(chore, checkIns)}
+                  status={computedStatus}
                   tone={brokenStreak ? "broken" : undefined}
                 />
               </div>
@@ -169,6 +177,15 @@ export function ChoreGroup({
                 </div>
               ) : null}
               {chore.rejection_note ? <p className="mt-3 rounded-2xl bg-rose-50/90 px-3 py-2 text-sm text-rose-800">{chore.rejection_note}</p> : null}
+              {canRecordRoutineCheckIn ? (
+                <button
+                  className="action-button mt-4 w-full rounded-2xl bg-gradient-to-r from-[#78a85a] to-[#d5a642] px-4 py-3 font-black text-[#231d16]"
+                  onClick={() => onRecordRoutineCheckIn(chore.id)}
+                  type="button"
+                >
+                  Record today&apos;s check-in
+                </button>
+              ) : null}
               <div className="mt-4 flex flex-col gap-2 sm:flex-row">
                 <button className="action-button flex-1 rounded-2xl border border-white/18 bg-white/10 px-4 py-3 font-black text-white" onClick={() => onEdit(chore)} type="button">Edit</button>
                 <button className="action-button flex-1 rounded-2xl border border-rose-300/30 bg-rose-400/16 px-4 py-3 font-black text-rose-100" onClick={() => onDeleteChore(chore.id)} type="button">Delete</button>

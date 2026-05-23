@@ -8,7 +8,9 @@
     "build": "next build",
     "start": "next start --hostname 127.0.0.1",
     "lint": "eslint",
-    "test:stress": "node scripts/stress-regression.mjs"
+    "test:rrc": "node scripts/rrc-regression.mjs",
+    "test:stress": "node scripts/home-stable-stress.mjs",
+    "test:beta-stress": "node scripts/stress-regression.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.3",

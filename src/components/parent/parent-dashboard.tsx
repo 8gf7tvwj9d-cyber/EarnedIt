@@ -27,9 +27,11 @@ import {
   formatRepeatDays,
   getComputedStatus,
   getOptionalTemplate,
+  getRequiredRollingStreakStatus,
   getRoutineDraftSchedule,
   isOptionalInstanceChore,
   isOptionalTemplateChore,
+  isRoutineChore,
 } from "@/lib/chore-helpers";
 import { formatCentsForDollarInput } from "@/lib/money";
 import {
@@ -54,6 +56,7 @@ type ParentDashboardProps = {
   onReject: (choreId: string, note: string) => void;
   onClearCompletedTestData: () => void;
   onOverrideMissedStreak: (choreId: string, missedDate: string, note: string) => void;
+  onRecordRoutineCheckIn: (choreId: string) => void;
   onMarkPaid: (childId: string, notes: string, paymentItems?: PaymentLineItem[]) => void;
 };
 
@@ -82,14 +85,13 @@ const emptyDraft: ChoreDraft = {
 
 function getDefaultParentSections() {
   return {
-    pendingReview: true,
-    approvedAwaitingPayment: true,
     active: false,
     paid: false,
     missed: false,
-    paymentHistory: false,
   };
 }
+
+type SummaryOverlay = "approved" | "pending" | "payments";
 
 export function ParentDashboard({
   childProfiles,
@@ -103,6 +105,7 @@ export function ParentDashboard({
   onReject,
   onClearCompletedTestData,
   onOverrideMissedStreak,
+  onRecordRoutineCheckIn,
   onMarkPaid,
 }: ParentDashboardProps) {
   const [isComposerOpen, setIsComposerOpen] = useState(false);
@@ -118,6 +121,7 @@ export function ParentDashboard({
   const [payoutNotes, setPayoutNotes] = useState("");
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
   const [selectedChildId, setSelectedChildId] = useState<string>("all");
+  const [summaryOverlay, setSummaryOverlay] = useState<SummaryOverlay | null>(null);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => {
     if (typeof window === "undefined") {
       return getDefaultParentSections();
@@ -155,12 +159,29 @@ export function ParentDashboard({
       ? "All child profiles"
       : selectedChildProfiles[0]?.name?.trim() || "child profile";
 
+  function isMissedOrArchivedChore(chore: Chore) {
+    if (isOptionalTemplateChore(chore)) {
+      return false;
+    }
+
+    const status = getComputedStatus(chore, scopedCheckIns);
+    if (status === "expired" || status === "rejected") {
+      return true;
+    }
+
+    return Boolean(
+      isRoutineChore(chore) &&
+        getRequiredRollingStreakStatus(chore, scopedCheckIns, chore.child_id).isBroken,
+    );
+  }
+
   const availableActive = scopedChores.filter((chore) => {
     const status = getComputedStatus(chore, scopedCheckIns);
     if (isOptionalInstanceChore(chore)) {
-      return status === "rejected";
+      return false;
     }
-    return status === "available" || status === "rejected";
+
+    return status === "available" && !isMissedOrArchivedChore(chore);
   });
   const awaitingApproval = scopedChores.filter(
     (chore) =>
@@ -174,8 +195,7 @@ export function ParentDashboard({
     (chore) => !isOptionalTemplateChore(chore) && getComputedStatus(chore, scopedCheckIns) === "paid",
   );
   const missedExpired = scopedChores.filter(
-    (chore) =>
-      !isOptionalTemplateChore(chore) && getComputedStatus(chore, scopedCheckIns) === "expired",
+    (chore) => isMissedOrArchivedChore(chore),
   );
   const totalUnpaidBalance = approvedCompleted.reduce((sum, chore) => sum + chore.amount_cents, 0);
   const clearableProgressCount =
@@ -191,9 +211,7 @@ export function ParentDashboard({
     approvedCompleted.length +
     paidChores.length +
     missedExpired.length;
-  const recentPayouts = [...scopedPayouts]
-    .sort((left, right) => right.paid_at.localeCompare(left.paid_at))
-    .slice(0, 3);
+  const sortedPayouts = [...scopedPayouts].sort((left, right) => right.paid_at.localeCompare(left.paid_at));
 
   function startEdit(chore: Chore) {
     const sourceChore = getOptionalTemplate(chores, chore) ?? chore;
@@ -491,9 +509,9 @@ export function ParentDashboard({
   return (
     <div className="space-y-6">
       <section className="grid gap-3 md:grid-cols-3">
-        <SummaryCard accent="from-[#fff0cb] via-[#f1d790] to-[#fff9e8]" icon="seed" label="Approved, Unpaid" value={formatCurrency(totalUnpaidBalance)} copy="Approved rewards waiting for payment" />
-        <SummaryCard accent="from-[#e4efd8] via-[#c9dfb4] to-[#fbf8ea]" icon="leaf" label="Pending Review" value={String(awaitingApproval.length)} copy="Submitted chores waiting for approval" />
-        <SummaryCard accent="from-[#f4e5bd] via-[#dfc06a] to-[#fff8df]" icon="sprout" label="Payment History" value={String(scopedPayouts.length)} copy="Completed payments on record" />
+        <SummaryCard accent="from-[#fff0cb] via-[#f1d790] to-[#fff9e8]" icon="seed" label="Approved, Unpaid" value={formatCurrency(totalUnpaidBalance)} copy="Tap to review payment-ready chores" onClick={() => setSummaryOverlay("approved")} />
+        <SummaryCard accent="from-[#e4efd8] via-[#c9dfb4] to-[#fbf8ea]" icon="leaf" label="Pending Review" value={String(awaitingApproval.length)} copy="Tap to approve or reject submissions" onClick={() => setSummaryOverlay("pending")} />
+        <SummaryCard accent="from-[#f4e5bd] via-[#dfc06a] to-[#fff8df]" icon="sprout" label="Payment History" value={String(scopedPayouts.length)} copy="Tap to see recorded payments" onClick={() => setSummaryOverlay("payments")} />
       </section>
 
       <section className="space-y-4">
@@ -592,54 +610,6 @@ export function ParentDashboard({
                   <button className="action-button mt-3 w-full rounded-2xl border border-amber-200/35 bg-amber-100/15 px-4 py-3 font-black text-amber-50 disabled:cursor-not-allowed disabled:opacity-60" disabled={clearableProgressCount === 0} onClick={() => setIsResetConfirmOpen(true)} type="button">Clear completed test data</button>
                 )}
               </div>
-              <DashboardSection
-                count={`${awaitingApproval.length} submitted`}
-                icon="check"
-                isOpen={openSections.pendingReview}
-                title="Pending Review"
-                onOpenChange={(next) => setSectionOpen("pendingReview", next)}
-              >
-                <div className="space-y-3">
-                  {awaitingApproval.length === 0 ? (
-                    <EmptyState copy="No chores are waiting for review right now." />
-                  ) : (
-                    awaitingApproval.map((chore) => (
-                      <ReviewCard key={chore.id} checkIns={scopedCheckIns} childName={childProfiles.find((child) => child.id === chore.child_id)?.name ?? "child profile"} chore={chore} chores={scopedChores} isRejecting={rejectingId === chore.id} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} rejectionNote={rejectionNote} onApprove={onApprove} onReject={onReject} onRejectingChange={setRejectingId} onRejectionNoteChange={setRejectionNote} />
-                    ))
-                  )}
-                </div>
-              </DashboardSection>
-
-              <DashboardSection
-                count={formatCurrency(totalUnpaidBalance)}
-                icon="wallet"
-                isOpen={openSections.approvedAwaitingPayment}
-                title="Approved / Awaiting Payment"
-                onOpenChange={(next) => setSectionOpen("approvedAwaitingPayment", next)}
-              >
-                <div className="space-y-3">
-                  <div className="rounded-[24px] border border-[#d8c075]/55 bg-[#fff8e6] p-4 text-slate-900">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <p className="font-black">Payment queue</p>
-                        <p className="mt-1 text-sm leading-6 text-slate-600">
-                          Review approved chores before anything moves to paid.
-                        </p>
-                      </div>
-                      <span className="stat-chip stat-chip-soft">{approvedCompleted.length} approved</span>
-                    </div>
-                    <button
-                      className="action-button mt-4 w-full rounded-2xl bg-gradient-to-r from-[#5f8f43] to-[#d8aa3d] px-5 py-4 text-base font-black text-[#231d16] shadow-lg shadow-[#3d2b12]/14 disabled:cursor-not-allowed disabled:opacity-55"
-                      disabled={approvedCompleted.length === 0}
-                      onClick={() => setIsPaymentReviewOpen(true)}
-                      type="button"
-                    >
-                      Review Payments
-                    </button>
-                  </div>
-                  <ChoreGroup allChores={scopedChores} checkIns={scopedCheckIns} chores={approvedCompleted} onOverrideMissedStreak={onOverrideMissedStreak} childProfiles={childProfiles} isEmbedded onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Approved queue" />
-                </div>
-              </DashboardSection>
             </div>
           </div>
         </div>
@@ -652,7 +622,7 @@ export function ParentDashboard({
             title="Available / Active"
             onOpenChange={(next) => setSectionOpen("active", next)}
           >
-            <ChoreGroup allChores={scopedChores} checkIns={scopedCheckIns} chores={availableActive} onOverrideMissedStreak={onOverrideMissedStreak} childProfiles={childProfiles} isEmbedded onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Active chores" />
+            <ChoreGroup allChores={scopedChores} checkIns={scopedCheckIns} chores={availableActive} onOverrideMissedStreak={onOverrideMissedStreak} onRecordRoutineCheckIn={onRecordRoutineCheckIn} childProfiles={childProfiles} isEmbedded onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Active chores" />
           </DashboardSection>
 
           <DashboardSection
@@ -662,7 +632,7 @@ export function ParentDashboard({
             title="Paid"
             onOpenChange={(next) => setSectionOpen("paid", next)}
           >
-            <ChoreGroup allChores={scopedChores} checkIns={scopedCheckIns} chores={paidChores} onOverrideMissedStreak={onOverrideMissedStreak} childProfiles={childProfiles} isEmbedded onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Paid chores" />
+            <ChoreGroup allChores={scopedChores} checkIns={scopedCheckIns} chores={paidChores} onOverrideMissedStreak={onOverrideMissedStreak} onRecordRoutineCheckIn={onRecordRoutineCheckIn} childProfiles={childProfiles} isEmbedded onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Paid chores" />
           </DashboardSection>
 
           <DashboardSection
@@ -672,49 +642,68 @@ export function ParentDashboard({
             title="Archived / Missed"
             onOpenChange={(next) => setSectionOpen("missed", next)}
           >
-            <ChoreGroup allChores={scopedChores} checkIns={scopedCheckIns} chores={missedExpired} onOverrideMissedStreak={onOverrideMissedStreak} childProfiles={childProfiles} isEmbedded onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Missed / expired" />
+            <ChoreGroup allChores={scopedChores} checkIns={scopedCheckIns} chores={missedExpired} onOverrideMissedStreak={onOverrideMissedStreak} onRecordRoutineCheckIn={onRecordRoutineCheckIn} childProfiles={childProfiles} isEmbedded onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Missed / expired" />
           </DashboardSection>
         </div>
 
-        <DashboardSection
-          count={formatCurrency(scopedPayouts.reduce((sum, payout) => sum + payout.amount_cents, 0))}
-          icon="seed"
-          isOpen={openSections.paymentHistory}
-          title="Payment History"
-          onOpenChange={(next) => setSectionOpen("paymentHistory", next)}
-        >
-          <div className="space-y-3">
-            {recentPayouts.length === 0 ? <EmptyState copy="No payments have been recorded yet." /> : recentPayouts.map((payout) => {
-              const payoutChores = scopedChores.filter(
-                (chore) =>
-                  chore.child_id === payout.child_id &&
-                  chore.status === "paid" &&
-                  chore.paid_at === payout.paid_at,
-              );
-
-              return (
-                <article key={payout.id} className="card-spotlight rounded-[24px] border border-[#d9c075]/45 bg-gradient-to-br from-[#fff8e6] to-white p-4 shadow-[0_16px_30px_rgba(48,35,18,0.08)]">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="support-label">Recent payment</p>
-                      <p className="mt-2 text-3xl font-black text-slate-900">{formatCurrency(payout.amount_cents)}</p>
-                      <p className="text-sm text-slate-600">{formatDate(getLocalDateKey(payout.paid_at))}</p>
-                    </div>
-                    <span className="stat-chip stat-chip-soft">{payout.paid_method}</span>
-                  </div>
-                  <p className="mt-2 text-sm text-slate-600">
-                    {payoutChores.length} chore{payoutChores.length === 1 ? "" : "s"} paid
-                  </p>
-                  {payout.notes ? <p className="mt-2 rounded-2xl bg-white px-3 py-2 text-sm text-slate-600">{payout.notes}</p> : null}
-                </article>
-              );
-            })}
-          </div>
-          <button className="action-button mt-4 w-full rounded-2xl bg-gradient-to-r from-[#6f9a52] to-[#d4ad4f] px-5 py-4 text-base font-black text-[#231d16] shadow-lg shadow-[#3d2b12]/14" onClick={() => setIsPayoutCalendarOpen(true)} type="button">
-            View payment calendar
-          </button>
-        </DashboardSection>
       </section>
+      {summaryOverlay ? (
+        <SummaryDetailOverlay
+          title={
+            summaryOverlay === "approved"
+              ? "Approved / Awaiting Payment"
+              : summaryOverlay === "pending"
+                ? "Pending Review"
+                : "Payment History"
+          }
+          onClose={() => setSummaryOverlay(null)}
+        >
+          {summaryOverlay === "pending" ? (
+            <div className="space-y-3">
+              {awaitingApproval.length === 0 ? (
+                <EmptyState copy="No chores are waiting for review right now." />
+              ) : (
+                awaitingApproval.map((chore) => (
+                  <ReviewCard key={chore.id} checkIns={scopedCheckIns} childName={childProfiles.find((child) => child.id === chore.child_id)?.name ?? "child profile"} chore={chore} chores={scopedChores} isRejecting={rejectingId === chore.id} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} rejectionNote={rejectionNote} onApprove={onApprove} onReject={onReject} onRejectingChange={setRejectingId} onRejectionNoteChange={setRejectionNote} />
+                ))
+              )}
+            </div>
+          ) : null}
+
+          {summaryOverlay === "approved" ? (
+            <div className="space-y-3">
+              <div className="rounded-[24px] border border-[#d8c075]/55 bg-[#fff8e6] p-4 text-slate-900">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="font-black">Payment queue</p>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">
+                      Review approved chores before anything moves to paid.
+                    </p>
+                  </div>
+                  <span className="stat-chip stat-chip-soft">{approvedCompleted.length} approved</span>
+                </div>
+                <button
+                  className="action-button mt-4 w-full rounded-2xl bg-gradient-to-r from-[#5f8f43] to-[#d8aa3d] px-5 py-4 text-base font-black text-[#231d16] shadow-lg shadow-[#3d2b12]/14 disabled:cursor-not-allowed disabled:opacity-55"
+                  disabled={approvedCompleted.length === 0}
+                  onClick={() => setIsPaymentReviewOpen(true)}
+                  type="button"
+                >
+                  Review Payments
+                </button>
+              </div>
+              <ChoreGroup allChores={scopedChores} checkIns={scopedCheckIns} chores={approvedCompleted} onOverrideMissedStreak={onOverrideMissedStreak} onRecordRoutineCheckIn={onRecordRoutineCheckIn} childProfiles={childProfiles} isEmbedded onDeleteChore={onDeleteChore} onEdit={startEdit} onOpenLightbox={(src, alt) => setLightboxImage({ src, alt })} title="Approved queue" />
+            </div>
+          ) : null}
+
+          {summaryOverlay === "payments" ? (
+            <PaymentHistoryList
+              chores={scopedChores}
+              payouts={sortedPayouts}
+              onOpenCalendar={() => setIsPayoutCalendarOpen(true)}
+            />
+          ) : null}
+        </SummaryDetailOverlay>
+      ) : null}
       {lightboxImage ? (
         <ImageLightbox alt={lightboxImage.alt} onClose={() => setLightboxImage(null)} src={lightboxImage.src} />
       ) : null}
@@ -782,5 +771,77 @@ function DashboardSection({
         <div className="accordion-panel-inner px-3 pb-4 pt-2 sm:px-4">{children}</div>
       </div>
     </section>
+  );
+}
+
+function SummaryDetailOverlay({
+  children,
+  title,
+  onClose,
+}: {
+  children: ReactNode;
+  title: string;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-950/70 px-3 py-4 backdrop-blur-sm sm:px-5 sm:py-6">
+      <div className="mx-auto flex max-h-full max-w-4xl flex-col overflow-hidden rounded-[32px] border border-white/15 bg-[#182313] shadow-[0_30px_80px_rgba(0,0,0,0.35)]">
+        <div className="flex items-center justify-between gap-3 border-b border-white/12 px-5 py-4 text-white">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-[#d8c075]">Dashboard detail</p>
+            <h3 className="mt-1 font-mono text-2xl font-black">{title}</h3>
+          </div>
+          <button className="hero-button-secondary rounded-full px-4 py-2 text-sm font-black" onClick={onClose} type="button">
+            Close
+          </button>
+        </div>
+        <div className="overflow-y-auto px-4 py-4 sm:px-5">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PaymentHistoryList({
+  chores,
+  payouts,
+  onOpenCalendar,
+}: {
+  chores: Chore[];
+  payouts: Payout[];
+  onOpenCalendar: () => void;
+}) {
+  return (
+    <div className="space-y-3">
+      {payouts.length === 0 ? <EmptyState copy="No payments have been recorded yet." /> : payouts.map((payout) => {
+        const payoutChores = chores.filter(
+          (chore) =>
+            chore.child_id === payout.child_id &&
+            chore.status === "paid" &&
+            chore.paid_at === payout.paid_at,
+        );
+
+        return (
+          <article key={payout.id} className="card-spotlight rounded-[24px] border border-[#d9c075]/45 bg-gradient-to-br from-[#fff8e6] to-white p-4 shadow-[0_16px_30px_rgba(48,35,18,0.08)]">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="support-label">Recorded payment</p>
+                <p className="mt-2 text-3xl font-black text-slate-900">{formatCurrency(payout.amount_cents)}</p>
+                <p className="text-sm text-slate-600">{formatDate(getLocalDateKey(payout.paid_at))}</p>
+              </div>
+              <span className="stat-chip stat-chip-soft">{payout.paid_method}</span>
+            </div>
+            <p className="mt-2 text-sm text-slate-600">
+              {payoutChores.length} chore{payoutChores.length === 1 ? "" : "s"} paid
+            </p>
+            {payout.notes ? <p className="mt-2 rounded-2xl bg-white px-3 py-2 text-sm text-slate-600">{payout.notes}</p> : null}
+          </article>
+        );
+      })}
+      <button className="action-button w-full rounded-2xl bg-gradient-to-r from-[#6f9a52] to-[#d4ad4f] px-5 py-4 text-base font-black text-[#231d16] shadow-lg shadow-[#3d2b12]/14" onClick={onOpenCalendar} type="button">
+        View payment calendar
+      </button>
+    </div>
   );
 }

@@ -8,6 +8,7 @@ import {
   getTodayIsoDate,
   isOptionalChore,
 } from "@/lib/chore-helpers";
+import { debugLog } from "@/lib/debug";
 import {
   getCheckInForChoreDate,
   getLocalDateFromTimestamp,
@@ -261,6 +262,12 @@ function normalizeChore(chore: Chore): Chore {
       : legacyKind === "rolling"
         ? "routine"
         : chore.chore_kind;
+  const normalizedTemplateId =
+    normalizedKind === "optional" ? chore.template_chore_id ?? null : null;
+  const normalizedIsTemplate =
+    normalizedKind === "optional"
+      ? (chore.is_template ?? (normalizedTemplateId === null))
+      : false;
   const defaultStartDate =
     normalizedKind === "routine"
       ? chore.start_date ?? null
@@ -299,11 +306,9 @@ function normalizeChore(chore: Chore): Chore {
       created_at: getTimestampValue(override.created_at, override.override_at, updatedAt),
       updated_at: getTimestampValue(override.updated_at, override.override_at, updatedAt),
     })),
-    is_template:
-      chore.is_template ??
-      Boolean(normalizedKind === "optional" && chore.template_chore_id == null),
-    template_chore_id: chore.template_chore_id ?? null,
-    instance_period_key: chore.instance_period_key ?? null,
+    is_template: normalizedIsTemplate,
+    template_chore_id: normalizedTemplateId,
+    instance_period_key: normalizedKind === "optional" ? chore.instance_period_key ?? null : null,
     created_at: createdAt,
     updated_at: updatedAt,
   };
@@ -1262,7 +1267,7 @@ export function addRollingProof(
 export function submitRollingChore(appData: AppData, choreId: string): AppData {
   const timestamp = new Date().toISOString();
 
-  console.log("[Earned] submit routine for approval requested", { choreId });
+  debugLog("chores", "submit routine for approval requested", { choreId });
 
   return {
     ...appData,
@@ -1272,7 +1277,7 @@ export function submitRollingChore(appData: AppData, choreId: string): AppData {
       }
 
       const progress = getRollingProgress(chore, appData.checkIns);
-      console.log("[Earned] routine progress before submit", {
+      debugLog("chores", "routine progress before submit", {
         choreId,
         completed: progress.completedDates.length,
         required: progress.requiredDates.length,
@@ -1299,7 +1304,7 @@ export function saveRoutineCheckIn(
   photosInput: ProofPhotoInput[] | string,
   checkInDate = getTodayIsoDate(),
 ) {
-  console.log("[Earned] Save Check-In clicked", { choreId, checkInDate });
+  debugLog("chores", "Save Check-In clicked", { choreId, checkInDate });
 
   const chore = appData.chores.find((entry) => entry.id === choreId);
   if (!chore) {
@@ -1329,14 +1334,14 @@ export function saveRoutineCheckIn(
     };
   }
 
-  console.log("[Earned] photo upload success", {
+  debugLog("chores", "photo upload success", {
     choreId,
     photoCount: photos.length,
   });
 
   const existingCheckIn = getCheckInForChoreDate(appData.checkIns, choreId, checkInDate);
   if (existingCheckIn) {
-    console.warn("[Earned] duplicate Save Check-In prevented", {
+    debugLog("chores", "duplicate Save Check-In prevented", {
       choreId,
       checkInDate,
       existingCheckInId: existingCheckIn.id,
@@ -1381,7 +1386,7 @@ export function saveRoutineCheckIn(
     updated_at: submittedAt,
   };
 
-  console.log("[Earned] check-in record created", checkIn);
+  debugLog("chores", "check-in record created", checkIn);
 
   const nextData = {
     ...appData,
@@ -1396,13 +1401,13 @@ export function saveRoutineCheckIn(
     ),
   };
 
-  console.log("[Earned] counter recalculation after check-in", {
+  debugLog("chores", "counter recalculation after check-in", {
     choreId,
     refreshedCheckIns: nextData.checkIns.filter((entry) => entry.chore_id === choreId).length,
     persisted: true,
   });
 
-  console.log("[Earned] response returned to frontend", {
+  debugLog("chores", "response returned to frontend", {
     choreId,
     ok: true,
     checkInDate,
@@ -1415,6 +1420,92 @@ export function saveRoutineCheckIn(
     persisted: true,
     rawStoredCheckInsCount: nextData.checkIns.length,
     filteredCheckInsCount: nextData.checkIns.filter((entry) => entry.chore_id === choreId).length,
+  };
+}
+
+const PARENT_RECORDED_CHECK_IN_PHOTO =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='360' viewBox='0 0 640 360'%3E%3Crect width='640' height='360' fill='%23f7efd9'/%3E%3Ccircle cx='96' cy='88' r='42' fill='%2379a85a' opacity='.28'/%3E%3Cpath d='M112 235c80-92 155-104 225-36 56 55 117 56 188 2v92H112z' fill='%2379a85a' opacity='.36'/%3E%3Ctext x='320' y='162' text-anchor='middle' font-family='Arial,sans-serif' font-size='28' font-weight='700' fill='%23322820'%3EParent recorded check-in%3C/text%3E%3Ctext x='320' y='204' text-anchor='middle' font-family='Arial,sans-serif' font-size='18' fill='%23604d3d'%3EAdded from the parent dashboard%3C/text%3E%3C/svg%3E";
+
+export function recordParentRoutineCheckIn(
+  appData: AppData,
+  choreId: string,
+  parentUser: User,
+  checkInDate = getTodayIsoDate(),
+) {
+  if (parentUser.role !== "parent") {
+    return {
+      appData,
+      message: "Only a parent can record a check-in.",
+      ok: false,
+    };
+  }
+
+  const chore = appData.chores.find((entry) => entry.id === choreId);
+  if (!chore || chore.chore_kind !== "routine" || chore.parent_id !== parentUser.id) {
+    return {
+      appData,
+      message: "Required repeating chore not found.",
+      ok: false,
+    };
+  }
+
+  const existingCheckIn = getCheckInForChoreDate(appData.checkIns, choreId, checkInDate);
+  if (existingCheckIn) {
+    return {
+      appData,
+      message: "That check-in is already logged for today.",
+      ok: false,
+    };
+  }
+
+  const rollingState = getRollingProgress(chore, appData.checkIns);
+  if (!rollingState.canCheckInToday) {
+    return {
+      appData,
+      message: rollingState.nextRestartDate
+        ? `Streak broken. Restarts ${rollingState.nextRestartDate}.`
+        : "Today is not an active required check-in day.",
+      ok: false,
+    };
+  }
+
+  const timestamp = new Date().toISOString();
+  const photo: ChoreProofPhoto = {
+    id: makeId("photo"),
+    photo_url: PARENT_RECORDED_CHECK_IN_PHOTO,
+    uploaded_at: timestamp,
+    label: "Extra",
+  };
+  const checkIn: CheckIn = {
+    id: makeId("checkin"),
+    household_id: chore.household_id,
+    chore_id: chore.id,
+    parent_id: chore.parent_id,
+    child_id: chore.child_id,
+    photo_url: photo.photo_url,
+    photos: [photo],
+    check_in_date: checkInDate,
+    submitted_at: timestamp,
+    uploaded_at: timestamp,
+    created_at: timestamp,
+    updated_at: timestamp,
+  };
+
+  return {
+    appData: {
+      ...appData,
+      checkIns: [...appData.checkIns, checkIn],
+      chores: appData.chores.map((entry) =>
+        entry.id === choreId
+          ? {
+              ...entry,
+              updated_at: timestamp,
+            }
+          : entry,
+      ),
+    },
+    message: "Today's check-in was recorded.",
+    ok: true,
   };
 }
 export function overrideMissedStreak(

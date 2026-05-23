@@ -5,6 +5,7 @@ import {
   markBalancePaid as markStoredBalancePaid,
   approveChore as approveStoredChore,
   overrideMissedStreak as overrideStoredMissedStreak,
+  recordParentRoutineCheckIn as recordStoredParentRoutineCheckIn,
   rejectChore as rejectStoredChore,
   resetAppData,
   saveChore as saveStoredChore,
@@ -2742,6 +2743,23 @@ export function completeRoutineCheckIn(
 
 export function submitRoutineForApproval(appData: AppData, choreId: string) {
   return submitStoredRollingChore(appData, choreId);
+}
+
+export function recordParentRoutineCheckIn(
+  appData: AppData,
+  choreId: string,
+  parentUser: User,
+) {
+  const householdId = getRepositoryHouseholdId(appData);
+  if (!assertHouseholdAccess(parentUser.household_id, householdId)) {
+    return {
+      appData,
+      message: "Parent account cannot record check-ins for this household.",
+      ok: false,
+    };
+  }
+
+  return recordStoredParentRoutineCheckIn(appData, choreId, parentUser);
 }
 
 export function approveChore(appData: AppData, choreId: string) {
