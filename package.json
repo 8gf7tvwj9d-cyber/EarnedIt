@@ -10,7 +10,9 @@
     "lint": "eslint",
     "test:rrc": "node scripts/rrc-regression.mjs",
     "test:stress": "node scripts/home-stable-stress.mjs",
-    "test:beta-stress": "node scripts/stress-regression.mjs"
+    "test:beta-stress": "node scripts/stress-regression.mjs",
+    "test:beta-regression": "node scripts/beta-regression.mjs",
+    "test:beta-full": "node scripts/beta-regression.mjs && node scripts/beta-full-regression.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.3",
