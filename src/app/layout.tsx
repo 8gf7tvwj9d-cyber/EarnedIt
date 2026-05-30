@@ -12,7 +12,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full antialiased">
+    // Prevent harmless root html attributes injected by browser/device tooling from opening the dev overlay.
+    <html lang="en" className="h-full antialiased" suppressHydrationWarning>
       <head>
         <link
           rel="apple-touch-icon"

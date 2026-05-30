@@ -120,6 +120,22 @@ function assertSourceGuardrails() {
     path.join(repoRoot, "src/lib/data/app-repository.ts"),
     "utf8",
   );
+  const earnedAppSource = fs.readFileSync(
+    path.join(repoRoot, "src/components/app-shell/earned-it-app.tsx"),
+    "utf8",
+  );
+  const childDashboardSource = fs.readFileSync(
+    path.join(repoRoot, "src/components/child/child-dashboard.tsx"),
+    "utf8",
+  );
+  const parentDashboardSource = fs.readFileSync(
+    path.join(repoRoot, "src/components/parent/parent-dashboard.tsx"),
+    "utf8",
+  );
+  const childManifestSource = fs.readFileSync(
+    path.join(repoRoot, "src/app/child-manifest/route.ts"),
+    "utf8",
+  );
   const bootstrapBody = extractFunctionBody(repositorySource, "createRemoteParentHousehold");
   const errorBody = extractFunctionBody(repositorySource, "describeSupabaseError");
   const foundationSql = fs.readFileSync(
@@ -193,6 +209,61 @@ function assertSourceGuardrails() {
     "child sync RPC must be executable by child-link sessions",
   );
   assert.match(diagnosticSql, /pg_policies/, "diagnostic helper must check RLS policies");
+  assert.doesNotMatch(
+    earnedAppSource,
+    /useState<BrowserNotificationStatus>\([\s\S]{0,120}getBrowserNotificationStatus/,
+    "browser notification status must not be read during the first render",
+  );
+  assert.match(
+    earnedAppSource,
+    /useEffect\(\(\) => \{[\s\S]{0,120}setNotificationStatus\(getBrowserNotificationStatus\(\)\)/,
+    "browser notification status should be detected after mount",
+  );
+  assert.doesNotMatch(
+    childDashboardSource,
+    /useState[\s\S]{0,320}sessionStorage/,
+    "child dashboard must not read sessionStorage during the first render",
+  );
+  assert.match(
+    childDashboardSource,
+    /useEffect\(\(\) => \{[\s\S]{0,260}sessionStorage\.getItem\("earned-child-dashboard-sections"\)/,
+    "child dashboard saved section state should be restored after mount",
+  );
+  assert.doesNotMatch(
+    parentDashboardSource,
+    /useState[\s\S]{0,320}sessionStorage/,
+    "parent dashboard must not read sessionStorage during the first render",
+  );
+  assert.match(
+    parentDashboardSource,
+    /useEffect\(\(\) => \{[\s\S]{0,260}sessionStorage\.getItem\("earned-parent-dashboard-sections"\)/,
+    "parent dashboard saved section state should be restored after mount",
+  );
+  assert.match(
+    earnedAppSource,
+    /\/child-manifest\?token=\$\{encodeURIComponent\(childProfile\.access_token\)\}/,
+    "signed-in child sessions must switch to a tokenized install manifest",
+  );
+  assert.match(
+    earnedAppSource,
+    /isStandaloneAppLaunch\(\)[\s\S]{0,140}isChildTokenBlockedForStandalone\(childLinkToken\)/,
+    "standalone child launches must respect child sign-out for tokenized home-screen icons",
+  );
+  assert.match(
+    earnedAppSource,
+    /blockChildTokenForStandalone\(activeChildToken\)/,
+    "child sign-out must block the tokenized home-screen icon on that device",
+  );
+  assert.match(
+    childManifestSource,
+    /startUrl\s*=\s*token[\s\S]{0,120}\/child-link\?token=/,
+    "child install manifest must launch back through the QR child-link bootstrap route",
+  );
+  assert.match(
+    childManifestSource,
+    /Content-Type["']:\s*["']application\/manifest\+json/,
+    "child install manifest must be served as a web manifest",
+  );
 }
 
 function parseIsoDate(date) {

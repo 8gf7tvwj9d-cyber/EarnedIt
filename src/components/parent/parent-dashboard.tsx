@@ -122,18 +122,9 @@ export function ParentDashboard({
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
   const [selectedChildId, setSelectedChildId] = useState<string>("all");
   const [summaryOverlay, setSummaryOverlay] = useState<SummaryOverlay | null>(null);
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => {
-    if (typeof window === "undefined") {
-      return getDefaultParentSections();
-    }
-
-    try {
-      const saved = window.sessionStorage.getItem("earned-parent-dashboard-sections");
-      return saved ? { ...getDefaultParentSections(), ...JSON.parse(saved) } : getDefaultParentSections();
-    } catch {
-      return getDefaultParentSections();
-    }
-  });
+  const [openSections, setOpenSections] =
+    useState<Record<string, boolean>>(() => getDefaultParentSections());
+  const [hasRestoredOpenSections, setHasRestoredOpenSections] = useState(false);
   const [lightboxImage, setLightboxImage] = useState<{ alt: string; src: string } | null>(null);
 
   const selectedChildProfiles =
@@ -251,11 +242,32 @@ export function ParentDashboard({
   }, [draft.id, isComposerOpen]);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        const saved = window.sessionStorage.getItem("earned-parent-dashboard-sections");
+        if (saved) {
+          setOpenSections({ ...getDefaultParentSections(), ...JSON.parse(saved) });
+        }
+      } catch {
+        // Saved UI state is optional; defaults keep the dashboard usable.
+      } finally {
+        setHasRestoredOpenSections(true);
+      }
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!hasRestoredOpenSections) {
+      return;
+    }
+
     window.sessionStorage.setItem(
       "earned-parent-dashboard-sections",
       JSON.stringify(openSections),
     );
-  }, [openSections]);
+  }, [hasRestoredOpenSections, openSections]);
 
   function setSectionOpen(sectionId: string, isOpen: boolean) {
     setOpenSections((current) => ({

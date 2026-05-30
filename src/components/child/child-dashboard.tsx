@@ -67,18 +67,9 @@ export function ChildDashboard({
   const [photoPreparing, setPhotoPreparing] = useState<Record<string, boolean>>({});
   const [routineSaving, setRoutineSaving] = useState<Record<string, boolean>>({});
   const [paidHistorySortOrder, setPaidHistorySortOrder] = useState<"newest" | "oldest">("newest");
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>(() => {
-    if (typeof window === "undefined") {
-      return getDefaultChildSections();
-    }
-
-    try {
-      const saved = window.sessionStorage.getItem("earned-child-dashboard-sections");
-      return saved ? { ...getDefaultChildSections(), ...JSON.parse(saved) } : getDefaultChildSections();
-    } catch {
-      return getDefaultChildSections();
-    }
-  });
+  const [openSections, setOpenSections] =
+    useState<Record<string, boolean>>(() => getDefaultChildSections());
+  const [hasRestoredOpenSections, setHasRestoredOpenSections] = useState(false);
   const [isTreeCelebrating, setIsTreeCelebrating] = useState(false);
   const [lightboxImage, setLightboxImage] = useState<{ alt: string; src: string } | null>(null);
 
@@ -133,11 +124,32 @@ export function ChildDashboard({
   );
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        const saved = window.sessionStorage.getItem("earned-child-dashboard-sections");
+        if (saved) {
+          setOpenSections({ ...getDefaultChildSections(), ...JSON.parse(saved) });
+        }
+      } catch {
+        // Saved UI state is optional; defaults keep the dashboard usable.
+      } finally {
+        setHasRestoredOpenSections(true);
+      }
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!hasRestoredOpenSections) {
+      return;
+    }
+
     window.sessionStorage.setItem(
       "earned-child-dashboard-sections",
       JSON.stringify(openSections),
     );
-  }, [openSections]);
+  }, [hasRestoredOpenSections, openSections]);
 
   useEffect(() => {
     const previousTreeXp = previousTreeXpRef.current;

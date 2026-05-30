@@ -3,10 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --webpack --hostname 127.0.0.1",
+    "dev": "next dev --webpack --hostname 0.0.0.0",
+    "dev:local": "next dev --webpack --hostname 127.0.0.1",
     "dev:lan": "next dev --webpack --hostname 0.0.0.0",
     "build": "next build",
-    "start": "next start --hostname 127.0.0.1",
+    "start": "next start --hostname 0.0.0.0",
     "lint": "eslint",
     "test:rrc": "node scripts/rrc-regression.mjs",
     "test:stress": "node scripts/home-stable-stress.mjs",

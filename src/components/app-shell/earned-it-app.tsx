@@ -72,6 +72,9 @@ type RoutineSaveResult = {
   appData: AppData;
 };
 
+const DEFAULT_MANIFEST_HREF = "/static/manifest.json";
+const CHILD_SIGNED_OUT_TOKEN_KEY = "earnedit-child-signed-out-tokens-v1";
+
 export function EarnedItApp() {
   const [appData, setAppData] = useState<AppData>(() => cloneBundledDemoData());
   const [hasLoadedStoredData, setHasLoadedStoredData] = useState(false);
@@ -82,7 +85,7 @@ export function EarnedItApp() {
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
   const [notificationStatus, setNotificationStatus] =
-    useState<BrowserNotificationStatus>(() => getBrowserNotificationStatus());
+    useState<BrowserNotificationStatus>("unsupported");
   const [toasts, setToasts] = useState<Toast[]>([]);
   const latestAppDataRef = useRef(appData);
   const notificationBaselineRef = useRef<AppData | null>(null);
@@ -96,6 +99,14 @@ export function EarnedItApp() {
   useEffect(() => {
     latestAppDataRef.current = appData;
   }, [appData]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setNotificationStatus(getBrowserNotificationStatus());
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -185,6 +196,21 @@ export function EarnedItApp() {
     const childLinkToken = params.get("token") ?? params.get("childLink");
     if (!childLinkToken || childDeviceLinkInFlightRef.current) {
       return;
+    }
+
+    if (
+      isStandaloneAppLaunch() &&
+      isChildTokenBlockedForStandalone(childLinkToken)
+    ) {
+      const timer = window.setTimeout(() => {
+        setAuthMessage("Signed out on this device. Scan the QR code again in Safari to reconnect.");
+        setAuthState("signed_out");
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+
+    if (!isStandaloneAppLaunch()) {
+      unblockChildTokenForStandalone(childLinkToken);
     }
 
     childDeviceLinkInFlightRef.current = true;
@@ -279,6 +305,19 @@ export function EarnedItApp() {
   } catch (error) {
     derivationError = error;
   }
+
+  useEffect(() => {
+    if (currentUser?.role !== "child" || !childProfile?.access_token) {
+      setManifestHref(DEFAULT_MANIFEST_HREF);
+      return;
+    }
+
+    setManifestHref(
+      `/child-manifest?token=${encodeURIComponent(childProfile.access_token)}`,
+    );
+
+    return () => setManifestHref(DEFAULT_MANIFEST_HREF);
+  }, [childProfile?.access_token, currentUser?.role]);
 
   useEffect(() => {
     if (!hasLoadedStoredData || !currentUser) {
@@ -442,6 +481,12 @@ export function EarnedItApp() {
   }
 
   async function handleParentSignOut() {
+    const activeChildToken =
+      currentUser?.role === "child" ? childProfile?.access_token ?? null : null;
+    if (activeChildToken) {
+      blockChildTokenForStandalone(activeChildToken);
+    }
+
     if (latestAppDataRef.current.session.authMode !== "supabase") {
       const signedOut = {
         ...latestAppDataRef.current,
@@ -960,6 +1005,75 @@ function getBrowserNotificationMessages(
       body: `${chore.title} is now ${chore.status}.`,
       tag: `${chore.status}-${chore.id}`,
     }));
+}
+
+function setManifestHref(href: string) {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  const manifestLink =
+    document.querySelector<HTMLLinkElement>('link[rel="manifest"]') ??
+    document.head.appendChild(document.createElement("link"));
+  manifestLink.rel = "manifest";
+  manifestLink.href = href;
+}
+
+function isStandaloneAppLaunch() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  const navigatorWithStandalone = window.navigator as Navigator & {
+    standalone?: boolean;
+  };
+
+  return (
+    window.matchMedia("(display-mode: standalone)").matches ||
+    navigatorWithStandalone.standalone === true
+  );
+}
+
+function readBlockedChildTokens() {
+  if (typeof window === "undefined") {
+    return new Set<string>();
+  }
+
+  try {
+    const parsed = JSON.parse(
+      window.localStorage.getItem(CHILD_SIGNED_OUT_TOKEN_KEY) ?? "[]",
+    );
+    return new Set(Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string") : []);
+  } catch {
+    return new Set<string>();
+  }
+}
+
+function writeBlockedChildTokens(tokens: Set<string>) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(CHILD_SIGNED_OUT_TOKEN_KEY, JSON.stringify([...tokens]));
+}
+
+function blockChildTokenForStandalone(token: string) {
+  const tokens = readBlockedChildTokens();
+  tokens.add(token);
+  writeBlockedChildTokens(tokens);
+}
+
+function unblockChildTokenForStandalone(token: string) {
+  const tokens = readBlockedChildTokens();
+  if (!tokens.delete(token)) {
+    return;
+  }
+
+  writeBlockedChildTokens(tokens);
+}
+
+function isChildTokenBlockedForStandalone(token: string) {
+  return readBlockedChildTokens().has(token);
 }
 
 function FirstTimeSetupScreen({

@@ -1,8 +1,9 @@
 $appRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $npmCmd = "C:\Program Files\nodejs\npm.cmd"
-$hostName = "127.0.0.1"
-$port = 3017
-$appUrl = "http://${hostName}:${port}"
+$serverHostName = "0.0.0.0"
+$healthCheckHostName = "127.0.0.1"
+$port = 3000
+$appUrl = "http://${healthCheckHostName}:${port}"
 $buildIdPath = Join-Path $appRoot ".next\BUILD_ID"
 $logPath = Join-Path $appRoot "launch_earned.log"
 $didBuild = $false
@@ -14,6 +15,33 @@ function Write-LaunchLog {
 
   $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
   Add-Content -Path $logPath -Value "[$timestamp] $Message" -Encoding UTF8
+}
+
+function Get-PrimaryLanIpAddress {
+  try {
+    $addresses = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
+      Where-Object {
+        $_.IPAddress -notlike "127.*" -and
+        $_.IPAddress -notlike "169.254.*" -and
+        $_.InterfaceAlias -notlike "*Loopback*" -and
+        $_.PrefixOrigin -ne "WellKnown"
+      } |
+      Sort-Object @{ Expression = { if ($_.InterfaceAlias -like "*Wi-Fi*" -or $_.InterfaceAlias -like "*Ethernet*") { 0 } else { 1 } } }, InterfaceMetric
+
+    $primary = $addresses | Select-Object -First 1
+    if ($primary) {
+      return $primary.IPAddress
+    }
+  } catch {
+    Write-LaunchLog "Could not detect LAN IP address: $($_.Exception.Message)"
+  }
+
+  return $healthCheckHostName
+}
+
+function Get-LaunchBaseUrl {
+  $lanIpAddress = Get-PrimaryLanIpAddress
+  return "http://${lanIpAddress}:${port}"
 }
 
 "" | Set-Content -Path $logPath -Encoding UTF8
@@ -123,7 +151,7 @@ function Get-LaunchUrl {
 
 function Stop-StaleAppServer {
   try {
-    $listeners = Get-NetTCPConnection -LocalAddress $hostName -LocalPort $port -State Listen -ErrorAction SilentlyContinue
+    $listeners = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
     foreach ($listener in $listeners) {
       if ($listener.OwningProcess -and $listener.OwningProcess -ne $PID) {
         Write-LaunchLog "Stopping existing listener on port ${port}: PID $($listener.OwningProcess)"
@@ -170,10 +198,10 @@ if ($didBuild -or -not (Test-AppReady)) {
     "start",
     "--",
     "--hostname",
-    $hostName,
+    $serverHostName,
     "--port",
     "$port"
-  ) -WindowStyle Minimized
+  ) -WindowStyle Hidden
 } else {
   Write-LaunchLog "Existing app server is already responding. Reusing it."
 }
@@ -182,9 +210,9 @@ $deadline = (Get-Date).AddSeconds(45)
 do {
   Start-Sleep -Milliseconds 750
   if (Test-AppReady) {
-    $launchUrl = Get-LaunchUrl
+    $launchUrl = (Get-LaunchUrl).Replace($appUrl, (Get-LaunchBaseUrl))
     Write-LaunchLog "App ready. Opening $launchUrl"
-    Start-Process (Get-LaunchUrl)
+    Start-Process $launchUrl
     exit 0
   }
 } while ((Get-Date) -lt $deadline)
